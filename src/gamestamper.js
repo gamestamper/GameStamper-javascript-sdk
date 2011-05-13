@@ -1,13 +1,33 @@
-if (!window.GSConstants) GSConstants = {
-	_baseDomain: "gamestamper.com",
-	_baseStaticDomainAndProto: "http:\/\/static.gamestamper.com\/",
-	_baseStaticDomainAndProtoSsl: "https:\/\/static.gamestamper.com\/",
-	_baseCDDomainAndProto: "http:\/\/static.gamescdn.com",
-	_baseCDDomainAndProtoSsl: "https:\/\/s3.amazonaws.com\/static.gamescdn.com",
-	_ps: "https",
-	_wwwDot: "",
-	_useDebug: 0,
-	_swf: "sdks/js/XdComm.swf"// 
+if (!window.GSConstants) {
+	GSConstants = {
+		//get query string parameter with default d for not found
+		getParam: function(k,d){
+			if (!GSConstants._qp) {
+				GSConstants._qp = {};
+				var s = location.search.substring(1).split('&');
+				for (var j=0;j<s.length;j++) {
+					var i = s[j].split('=');
+					GSConstants._qp[i[0]]= unescape(i[1]);
+				}
+			}
+			if (!GSConstants._qp[k])
+				GSConstants._qp[k] = d;
+			return GSConstants._qp[k];
+		}
+	}
+	GSConstants._defaultDomain = "gamestamper.com";
+	GSConstants._baseDomain= GSConstants.getParam("www",GSConstants._defaultDomain).replace(/(http:\/\/|https:\/\/)/,"").replace(/www\./,"");
+	if (!GSConstants._baseDomain[GSConstants._baseDomain.length-1]=="/") GSConstants._baseDomain+="/";
+	GSConstants._baseStaticDomainAndProto= "http:\/\/static.gamestamper.com\/";
+	GSConstants._baseStaticDomainAndProtoSsl= "https:\/\/static.gamestamper.com\/";
+	GSConstants._baseCDDomainAndProto= "http:\/\/static.gamescdn.com";
+	GSConstants._baseCDDomainAndProtoSsl= "https:\/\/s3.amazonaws.com\/static.gamescdn.com";
+	GSConstants._ps= "https";
+	GSConstants._wwwDot= "";
+	GSConstants._useDebug= 0;
+	GSConstants._swf= "sdks/js/XdComm.swf";
+	GSConstants._graph= GSConstants.getParam('graph',GSConstants._ps+'://graph.'+GSConstants._baseDomain+'/');
+	if (!GSConstants._graph[GSConstants._graph.length-1]!='/') GSConstants._graph+='/';
 }
 
 if (!window.GS) window.GS = {
@@ -22,10 +42,11 @@ if (!window.GS) window.GS = {
         api_read: GSConstants._ps+'://api-read.'+GSConstants._baseDomain+'/',
         cdn: GSConstants._baseCDDomainAndProto+'/',
         https_cdn:GSConstants._baseCDDomainAndProtoSsl,
-        graph: GSConstants._ps+'://graph.'+GSConstants._baseDomain+'/',
-        staticgs: GSConstants._baseCDDomainAndProto+'/',
-        https_staticgs: GSConstants._baseCDDomainAndProtoSsl+'/',
+        graph: GSConstants._graph,
+        staticgs: GSConstants._baseStaticDomainAndProto+'/',
+        https_staticgs: GSConstants._baseStaticDomainAndProtoSsl+'/',
         www: window.location.protocol + '//www.'+GSConstants._baseDomain+'/',
+		def_www: window.location.protocol + '//www.'+GSConstants._defaultDomain+'/',
         https_www: GSConstants._ps+'://www.'+GSConstants._baseDomain+'/'
     },
     _locale: null,
@@ -46,6 +67,8 @@ if (!window.GS) window.GS = {
             return GS._domain.https_staticgs;
         case 'www':
             return GS._https ? GS._domain.https_www : GS._domain.www;
+		case 'def_www':
+            return GS._domain.def_www;
         case 'https_www':
             return GS._domain.https_www;
         }
@@ -700,7 +723,7 @@ GS.provide('Arbiter', {
                 return;
             } catch (a) {}
         }
-        var h = (GSConstants._baseStaticDomainAndProto+ 'connect/canvas_proxy.htm#' + GS.QS.encode({
+        var h = (GS.getDomain((b ? 'https_' : '') + 'staticgs')+ 'connect/canvas_proxy.htm#' + GS.QS.encode({
             method: c,
             params: GS.JSON.stringify(e || {}),
             relation: f
@@ -984,7 +1007,7 @@ GS.provide('Dialog', {
             c = parseInt(c, 10);
             c = c ? c : 460;
             GS.Dialog._loaderEl = GS.Dialog._findRoot(GS.Dialog.create({
-                content: ('<div class="dialog_title">' + '  <a id="gs_dialog_loader_close">' + '    <div class="gs_dialog_close_icon"></div>' + '  </a>' + '  <span>GameStamper</span>' + '  <div style="clear:both;"></div>' + '</div>' + '<div class="dialog_content"></div>' + '<div class="dialog_footer"></div>'),
+                content: ('<div class="dialog_title gs_progress_title">' + '  <a id="gs_dialog_loader_close">' + '    <div class="gs_dialog_close_icon"></div>' + '  </a>' + '' + '  <div style="clear:both;"></div>' + '</div>' + '<div class="dialog_content"></div>' + '<div class="dialog_footer"></div>'),
                 width: c
             }));
         }
@@ -1078,12 +1101,12 @@ GS.provide('Dialog', {
     }
 });
 GS.provide('', {
-    ui: function (e, b) {
-        if (!e.method) {
+    ui: function (config, b) {
+        if (!config.method) {
             GS.log('"method" is a required parameter for GS.ui().');
             return;
         }
-        var a = GS.UIServer.prepareCall(e, b);
+        var a = GS.UIServer.prepareCall(config, b);
         if (!a) return;
         var d = a.params.display;
         if (d == 'dialog') d = 'iframe';
@@ -1107,34 +1130,35 @@ GS.provide('UIServer', {
         }
         return a;
     },
-    prepareCall: function (h, b) {
-        var g = h.method.toLowerCase(),
-            f = GS.UIServer.Methods[g] || {
+    prepareCall: function (config, b) {
+        var method = config.method.toLowerCase(),
+            f = GS.UIServer.Methods[method] || {
                 size: {
                     width: 575,
                     height: 240
                 }
             },
-            e = GS.guid(),
-            d = GS._https || (g !== 'auth.status');
-        GS.copy(h, {
+            guid = GS.guid(),
+            d = GS._https || (method !== 'auth.status');
+        GS.copy(config, {
             api_key: GS._apiKey,
             app_id: GS._apiKey,
             locale: GS._locale,
             sdk: 'joey',
+			graph: GSConstants._graph,
             access_token: d && GS._session && GS._session.access_token || undefined
         });
-        h.display = GS.UIServer.getDisplayMode(f, h);
+        config.display = GS.UIServer.getDisplayMode(f, config);
         if (!f.url) {
-            f.url = 'dialog/' + g;
-            if (!GS.Canvas.isTabIframe()) delete h.method;
+            f.url = 'dialog/' + method;
+            if (!GS.Canvas.isTabIframe()) delete config.method;
         }
         var a = {
             cb: b,
-            id: e,
+            id: guid,
             size: f.size || {},
-            url: GS.getDomain(d ? 'https_www' : 'www') + f.url,
-            params: h
+            url: GS.getDomain('def_www') + f.url,
+            params: config
         };
         var j = f.transform ? f.transform : GS.UIServer.genericTransform;
         if (j) {
@@ -1144,7 +1168,7 @@ GS.provide('UIServer', {
         var i = GS.UIServer.getXdRelation(a.params.display);
         if (!(a.id in GS.UIServer._defaultCb) && !('next' in a.params)) a.params.next = GS.UIServer._xdResult(a.cb, a.id, i, true);
         if (i === 'parent')
-        	a.params.channel_url = GS.UIServer._xdChannelHandler(e, 'parent.parent');
+        	a.params.channel_url = GS.UIServer._xdChannelHandler(guid, 'parent.parent');
         a.params = GS.JSON.flatten(a.params);
         var c = GS.QS.encode(a.params);
         if ((a.url + c).length > 2000) {
@@ -1305,9 +1329,9 @@ GS.provide('UIServer', {
         delete GS.UIServer._defaultCb[b.frame];
         a(b);
     },
-    _xdResult: function (a, b, d, c) {
+    _xdResult: function (cb, b, d, c) {
         return (GS.UIServer._xdNextHandler(function (e) {
-            a && a(e.result && e.result != GS.UIServer._resultToken && GS.JSON.parse(e.result));
+            cb && cb(e.result && e.result != GS.UIServer._resultToken && GS.JSON.parse(e.result));
         }, b, d, c) + '&result=' + encodeURIComponent(GS.UIServer._resultToken));
     }
 });
@@ -1490,7 +1514,7 @@ GS.provide('UIServer.Methods', {
             a.params.skip_api_login = 1;
             var c = GS.UIServer.getXdRelation(a.params.display);
             var b = GS.UIServer._xdResult(a.cb, a.id, c, true);
-            a.params.next = GS.getDomain(GS._https ? 'https_www' : 'www') + "login.php?" + GS.QS.encode({
+            a.params.next = GS.getDomain('def_www') + "login.php?" + GS.QS.encode({
                 api_key: GS._apiKey,
                 next: b,
                 skip_api_login: 1
@@ -2243,7 +2267,7 @@ GS.subclass('XGSML.IframeWidget', 'XGSML.Element', null, {
         }, this.getUrlBits().params);
     },
     _getURL: function () {
-        var a = 'www',
+        var a = 'def_www',
             b = '';
         if (this._fetchPreCachedLoader) {
             a = 'cdn';
@@ -3914,12 +3938,13 @@ GS.provide("", {
         "api": GSConstants._ps+":\/\/api."+GSConstants._baseDomain+"\/",
         "api_read": GSConstants._ps+":\/\/api-read."+GSConstants._baseDomain+"\/",
         "cdn": GSConstants._baseCDDomainAndProto+"\/",
-        "graph": GSConstants._ps+":\/\/graph."+GSConstants._baseDomain+"\/",
+        "graph": GSConstants._graph,
         "https_cdn": GSConstants._baseCDDomainAndProtoSsl+"\/",
-        "https_staticgs": GSConstants._baseCDDomainAndProtoSsl+"\/",
+        "https_staticgs": GSConstants._baseStaticDomainAndProtoSsl+"\/",
         "https_www": GSConstants._ps+":\/\/www."+GSConstants._baseDomain+"\/",
-        "staticgs": GSConstants._baseCDDomainAndProto+"\/",
-        "www": "http:\/\/www."+GSConstants._baseDomain+"\/"
+        "staticgs": GSConstants._baseStaticDomainAndProto+"\/",
+        "www": "http:\/\/www."+GSConstants._baseDomain+"\/",
+		"def_www": window.location.protocol + "\/\/www."+GSConstants._defaultDomain+"\/"
     },
     "_locale": "en_US",
     "_localeIsRtl": false
@@ -3949,5 +3974,5 @@ GS.provide("XGSML.ProfilePic", {
     }
 }, true);
 if (GS.Dom && GS.Dom.addCssRules) {
-    GS.Dom.addCssRules(".gs_hidden{position:absolute;top:-10000px;z-index:10001}\n.gs_reset{background:none;border-spacing:0;border:0;color:#000;cursor:auto;direction:ltr;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;font-size:11px;font-style:normal;font-variant:normal;font-weight:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal}\n.gs_link img{border:none}\n.gs_dialog{position:absolute;top:-10000px;z-index:10001}\n.gs_dialog_advanced{background:rgba(82, 82, 82, .7);padding:10px;-moz-border-radius:8px;-webkit-border-radius:8px}\n.gs_dialog_content{background:#fff;color:#333}\n.gs_dialog_close_icon{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 0 transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif);cursor:pointer;display:block;height:15px;position:absolute;right:18px;top:17px;width:15px;top:8px\\9;right:7px\\9}\n.gs_dialog_close_icon:hover{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -15px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_close_icon:active{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -30px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_loader{background-color:#f2f2f2;border:1px solid #606060;font-size:24px;padding:20px}\n.gs_dialog_top_left,\n.gs_dialog_top_right,\n.gs_dialog_bottom_left,\n.gs_dialog_bottom_right{height:10px;width:10px;overflow:hidden;position:absolute}\n.gs_dialog_top_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 0;left:-10px;top:-10px}\n.gs_dialog_top_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -10px;right:-10px;top:-10px}\n.gs_dialog_bottom_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -20px;bottom:-10px;left:-10px}\n.gs_dialog_bottom_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -30px;right:-10px;bottom:-10px}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right,\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{position:absolute;background:#525252;filter:alpha(opacity=70);opacity:.7}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right{width:10px;height:100\u0025}\n.gs_dialog_vert_left{margin-left:-10px}\n.gs_dialog_vert_right{right:0;margin-right:-10px}\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{width:100\u0025;height:10px}\n.gs_dialog_horiz_top{margin-top:-10px}\n.gs_dialog_horiz_bottom{bottom:0;margin-bottom:-10px}\n.gs_dialog_iframe{line-height:0}\n.gs_dialog_content .dialog_title{background:#6d84b4;border:1px solid #3b5998;color:#fff;font-size:14px;font-weight:bold;margin:0}\n.gs_dialog_content .dialog_title > span{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zd-r-Cou7n-nqK52.gif) no-repeat 5px 50\u0025;float:left;padding:5px 0 7px 26px}\n.gs_dialog_content .dialog_content{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat 50\u0025 50\u0025;border:1px solid #555;border-bottom:0;border-top:0;height:150px}\n.gs_dialog_content .dialog_footer{background:#f2f2f2;border:1px solid #555;border-top-color:#ccc;height:40px}\n#gs_dialog_loader_close{float:right}\n.fb_iframe_widget{position:relative;display:-moz-inline-block;display:inline-block}\n.fb_iframe_widget iframe{position:relative;vertical-align:text-bottom}\n.fb_iframe_widget span{position:relative}\n.fb_hide_iframes iframe{position:relative;left:-10000px}\n.fb_iframe_widget_loader{position:relative;display:inline-block}\n.fb_iframe_widget_loader iframe{min-height:32px;z-index:2;zoom:1}\n.fb_iframe_widget_loader .GS_Loader{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat;height:32px;width:32px;margin-left:-16px;position:absolute;left:50\u0025;z-index:4}\n.gs_button_simple,\n.gs_button_simple_rtl{background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zH-r-eIpbnVKI9lR.png);background-repeat:no-repeat;cursor:pointer;outline:none;text-decoration:none}\n.gs_button_simple_rtl{background-position:right 0}\n.gs_button_simple .gs_button_text{margin:0 0 0 20px;padding-bottom:1px}\n.gs_button_simple_rtl .gs_button_text{margin:0 10px 0 0}\na.gs_button_simple:hover .gs_button_text,\na.gs_button_simple_rtl:hover .gs_button_text,\n.gs_button_simple:hover .gs_button_text,\n.gs_button_simple_rtl:hover .gs_button_text{text-decoration:underline}\n.gs_button,\n.gs_button_rtl{background:#29447e url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);background-repeat:no-repeat;cursor:pointer;display:inline-block;padding:0 0 0 1px;text-decoration:none;outline:none}\n.gs_button .gs_button_text,\n.gs_button_rtl .gs_button_text{background:#5f78ab url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);border-top:solid 1px #879ac0;border-bottom:solid 1px #1a356e;color:#fff;display:block;font-family:\"lucida grande\",tahoma,verdana,arial,sans-serif;font-weight:bold;padding:2px 6px 3px 6px;margin:1px 1px 0 21px;text-shadow:none}\na.gs_button,\na.gs_button_rtl,\n.gs_button,\n.gs_button_rtl{text-decoration:none}\na.gs_button:active .gs_button_text,\na.gs_button_rtl:active .gs_button_text,\n.gs_button:active .gs_button_text,\n.gs_button_rtl:active .gs_button_text{border-bottom:solid 1px #29447e;border-top:solid 1px #45619d;background:#4f6aa3;text-shadow:none}\n.gs_button_xlarge,\n.gs_button_xlarge_rtl{background-position:left -60px;font-size:24px;line-height:30px}\n.gs_button_xlarge .gs_button_text{padding:3px 8px 3px 12px;margin-left:38px}\na.gs_button_xlarge:active{background-position:left -99px}\n.gs_button_xlarge_rtl{background-position:right -268px}\n.gs_button_xlarge_rtl .gs_button_text{padding:3px 8px 3px 12px;margin-right:39px}\na.gs_button_xlarge_rtl:active{background-position:right -307px}\n.gs_button_large,\n.gs_button_large_rtl{background-position:left -138px;font-size:13px;line-height:16px}\n.gs_button_large .gs_button_text{margin-left:24px;padding:2px 6px 4px 6px}\na.gs_button_large:active{background-position:left -163px}\n.gs_button_large_rtl{background-position:right -346px}\n.gs_button_large_rtl .gs_button_text{margin-right:25px}\na.gs_button_large_rtl:active{background-position:right -371px}\n.gs_button_medium,\n.gs_button_medium_rtl{background-position:left -188px;font-size:11px;line-height:14px}\na.gs_button_medium:active{background-position:left -210px}\n.gs_button_medium_rtl{background-position:right -396px}\n.gs_button_text_rtl,\n.gs_button_medium_rtl .gs_button_text{padding:2px 6px 3px 6px;margin-right:22px}\na.gs_button_medium_rtl:active{background-position:right -418px}\n.gs_button_small,\n.gs_button_small_rtl{background-position:left -232px;font-size:10px;line-height:10px}\n.gs_button_small .gs_button_text{padding:2px 6px 3px;margin-left:17px}\na.gs_button_small:active,\n.gs_button_small:active{background-position:left -250px}\n.gs_button_small_rtl{background-position:right -440px}\n.gs_button_small_rtl .gs_button_text{padding:2px 6px;margin-right:18px}\na.gs_button_small_rtl:active{background-position:right -458px}\n.gs_connect_bar_container div,\n.gs_connect_bar_container span,\n.gs_connect_bar_container a,\n.gs_connect_bar_container img,\n.gs_connect_bar_container strong{background:none;border-spacing:0;border:0;direction:ltr;font-style:normal;font-variant:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal;vertical-align:baseline}\n.gs_connect_bar_container{position:fixed;left:0 !important;right:0 !important;height:42px !important;padding:0 25px !important;margin:0 !important;vertical-align:middle !important;border-bottom:1px solid #333 !important;background:#3b5998 !important;z-index:99999999 !important;overflow:hidden !important}\n.gs_connect_bar_container_ie6{position:absolute;top:expression(document.compatMode==\"CSS1Compat\"? document.documentElement.scrollTop+\"px\":body.scrollTop+\"px\")}\n.gs_connect_bar{position:relative;margin:auto;height:100\u0025;width:100\u0025;padding:6px 0 0 0 !important;background:none;color:#fff !important;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif !important;font-size:13px !important;font-style:normal !important;font-variant:normal !important;font-weight:normal !important;letter-spacing:normal !important;line-height:1 !important;text-decoration:none !important;text-indent:0 !important;text-shadow:none !important;text-transform:none !important;white-space:normal !important;word-spacing:normal !important}\n.gs_connect_bar a:hover{color:#fff}\n.gs_connect_bar .gs_profile img{height:30px;width:30px;vertical-align:middle;margin:0 6px 5px 0}\n.gs_connect_bar div a,\n.gs_connect_bar span,\n.gs_connect_bar span a{color:#bac6da;font-size:11px;text-decoration:none}\n.gs_connect_bar .gs_buttons{float:right;margin-top:7px}\n.gs_edge_widget_with_comment{position:relative;*z-index:1000}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget{position:absolute}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_ltr{left:-4px}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_rtl{left:2px}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget{left:0}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget .GS_Loader{left:10\u0025}\n.gs_share_count_wrapper{position:relative;float:left}\n.gs_share_count{background:#b0b9ec none repeat scroll 0 0;color:#333;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;text-align:center}\n.gs_share_count_inner{background:#e8ebf2;display:block}\n.gs_share_count_right{margin-left:-1px;display:inline-block}\n.gs_share_count_right .gs_share_count_inner{border-top:solid 1px #e8ebf2;border-bottom:solid 1px #b0b9ec;margin:1px 1px 0 1px;font-size:10px;line-height:10px;padding:2px 6px 3px;font-weight:bold}\n.gs_share_count_top{display:block;letter-spacing:-1px;line-height:34px;margin-bottom:7px;font-size:22px;border:solid 1px #b0b9ec}\n.gs_share_count_nub_top{border:none;display:block;position:absolute;left:7px;top:35px;margin:0;padding:0;width:6px;height:7px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zU-r-bSOHtKbCGYI.png)}\n.gs_share_count_nub_right{border:none;display:inline-block;padding:0;width:5px;height:10px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zX-r-i_oIVTKMYsL.png);vertical-align:top;background-position:right 5px;z-index:10;left:2px;margin:0 2px 0 0;position:relative}\n.gs_share_no_count{display:none}\n.gs_share_size_Small .gs_share_count_right .gs_share_count_inner{font-size:10px}\n.gs_share_size_Medium .gs_share_count_right .gs_share_count_inner{font-size:11px;padding:2px 6px 3px;letter-spacing:-1px;line-height:14px}\n.gs_share_size_Large .gs_share_count_right .gs_share_count_inner{font-size:13px;line-height:16px;padding:2px 6px 4px;font-weight:normal;letter-spacing:-1px}\n.gs_share_count_hidden .gs_share_count_nub_top,\n.gs_share_count_hidden .gs_share_count_top,\n.gs_share_count_hidden .gs_share_count_nub_right,\n.gs_share_count_hidden .gs_share_count_right{visibility:hidden}\n#gs_social_bar_container{position:fixed;left:0;right:0;height:34px;padding:0 25px;z-index:999999999}\n.gs_social_bar_iframe{position:relative;float:right;opacity:0;-moz-opacity:0;filter:alpha(opacity=0)}\n.gs_social_bar_iframe_bottom_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop+document.documentElement.clientHeight-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n.gs_social_bar_iframe_top_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n .gs_dialog_content .dialog_title {background:url(https:\/\/s3.amazonaws.com\/static.gamescdn.com\/img\/bgSprite.png?1) repeat-x scroll 0 -124px #01A3C2; padding:10px; }.gs_dialog_content .dialog_title > span {background:url(http:\/\/static.gamescdn.com\/img\/favicon.png) no-repeat 0 50\u0025; padding:1px 0 1px 23px;} .gs_dialog_content .dialog_title, .gs_dialog_content .dialog_content {border:0;} .gs_dialog_content .dialog_footer { border-left-width:0; border-right-width:0;}", ["gs.css.base", "gs.css.dialog", "gs.css.iframewidget", "gs.css.button", "gs.css.connectbarwidget", "gs.css.edgecommentwidget", "gs.css.sendbuttonformwidget", "gs.css.sharebutton", "gs.css.socialbarwidget"]);
+    GS.Dom.addCssRules(".gs_progress_title{display:none}\n.gs_hidden{position:absolute;top:-10000px;z-index:10001}\n.gs_reset{background:none;border-spacing:0;border:0;color:#000;cursor:auto;direction:ltr;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;font-size:11px;font-style:normal;font-variant:normal;font-weight:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal}\n.gs_link img{border:none}\n.gs_dialog{position:absolute;top:-10000px;z-index:10001}\n.gs_dialog_advanced{background:rgba(82, 82, 82, .7);padding:10px;-moz-border-radius:8px;-webkit-border-radius:8px}\n.gs_dialog_content{background:#fff;color:#333}\n.gs_dialog_close_icon{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 0 transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif);cursor:pointer;display:block;height:15px;position:absolute;right:18px;top:17px;width:15px;top:8px\\9;right:7px\\9}\n.gs_dialog_close_icon:hover{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -15px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_close_icon:active{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -30px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_loader{background-color:#f2f2f2;border:1px solid #606060;font-size:24px;padding:20px}\n.gs_dialog_top_left,\n.gs_dialog_top_right,\n.gs_dialog_bottom_left,\n.gs_dialog_bottom_right{height:10px;width:10px;overflow:hidden;position:absolute}\n.gs_dialog_top_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 0;left:-10px;top:-10px}\n.gs_dialog_top_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -10px;right:-10px;top:-10px}\n.gs_dialog_bottom_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -20px;bottom:-10px;left:-10px}\n.gs_dialog_bottom_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -30px;right:-10px;bottom:-10px}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right,\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{position:absolute;background:#525252;filter:alpha(opacity=70);opacity:.7}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right{width:10px;height:100\u0025}\n.gs_dialog_vert_left{margin-left:-10px}\n.gs_dialog_vert_right{right:0;margin-right:-10px}\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{width:100\u0025;height:10px}\n.gs_dialog_horiz_top{margin-top:-10px}\n.gs_dialog_horiz_bottom{bottom:0;margin-bottom:-10px}\n.gs_dialog_iframe{line-height:0}\n.gs_dialog_content .dialog_title{background:#6d84b4;border:1px solid #3b5998;color:#fff;font-size:14px;font-weight:bold;margin:0}\n.gs_dialog_content .dialog_title > span{float:left;padding:5px 0 7px 26px}\n.gs_dialog_content .dialog_content{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat 50\u0025 50\u0025;border:1px solid #555;border-bottom:0;border-top:0;height:150px}\n.gs_dialog_content .dialog_footer{background:#f2f2f2;border:1px solid #555;border-top-color:#ccc;height:40px}\n#gs_dialog_loader_close{float:right}\n.fb_iframe_widget{position:relative;display:-moz-inline-block;display:inline-block}\n.fb_iframe_widget iframe{position:relative;vertical-align:text-bottom}\n.fb_iframe_widget span{position:relative}\n.fb_hide_iframes iframe{position:relative;left:-10000px}\n.fb_iframe_widget_loader{position:relative;display:inline-block}\n.fb_iframe_widget_loader iframe{min-height:32px;z-index:2;zoom:1}\n.fb_iframe_widget_loader .GS_Loader{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat;height:32px;width:32px;margin-left:-16px;position:absolute;left:50\u0025;z-index:4}\n.gs_button_simple,\n.gs_button_simple_rtl{background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zH-r-eIpbnVKI9lR.png);background-repeat:no-repeat;cursor:pointer;outline:none;text-decoration:none}\n.gs_button_simple_rtl{background-position:right 0}\n.gs_button_simple .gs_button_text{margin:0 0 0 20px;padding-bottom:1px}\n.gs_button_simple_rtl .gs_button_text{margin:0 10px 0 0}\na.gs_button_simple:hover .gs_button_text,\na.gs_button_simple_rtl:hover .gs_button_text,\n.gs_button_simple:hover .gs_button_text,\n.gs_button_simple_rtl:hover .gs_button_text{text-decoration:underline}\n.gs_button,\n.gs_button_rtl{background:#29447e url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);background-repeat:no-repeat;cursor:pointer;display:inline-block;padding:0 0 0 1px;text-decoration:none;outline:none}\n.gs_button .gs_button_text,\n.gs_button_rtl .gs_button_text{background:#5f78ab url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);border-top:solid 1px #879ac0;border-bottom:solid 1px #1a356e;color:#fff;display:block;font-family:\"lucida grande\",tahoma,verdana,arial,sans-serif;font-weight:bold;padding:2px 6px 3px 6px;margin:1px 1px 0 21px;text-shadow:none}\na.gs_button,\na.gs_button_rtl,\n.gs_button,\n.gs_button_rtl{text-decoration:none}\na.gs_button:active .gs_button_text,\na.gs_button_rtl:active .gs_button_text,\n.gs_button:active .gs_button_text,\n.gs_button_rtl:active .gs_button_text{border-bottom:solid 1px #29447e;border-top:solid 1px #45619d;background:#4f6aa3;text-shadow:none}\n.gs_button_xlarge,\n.gs_button_xlarge_rtl{background-position:left -60px;font-size:24px;line-height:30px}\n.gs_button_xlarge .gs_button_text{padding:3px 8px 3px 12px;margin-left:38px}\na.gs_button_xlarge:active{background-position:left -99px}\n.gs_button_xlarge_rtl{background-position:right -268px}\n.gs_button_xlarge_rtl .gs_button_text{padding:3px 8px 3px 12px;margin-right:39px}\na.gs_button_xlarge_rtl:active{background-position:right -307px}\n.gs_button_large,\n.gs_button_large_rtl{background-position:left -138px;font-size:13px;line-height:16px}\n.gs_button_large .gs_button_text{margin-left:24px;padding:2px 6px 4px 6px}\na.gs_button_large:active{background-position:left -163px}\n.gs_button_large_rtl{background-position:right -346px}\n.gs_button_large_rtl .gs_button_text{margin-right:25px}\na.gs_button_large_rtl:active{background-position:right -371px}\n.gs_button_medium,\n.gs_button_medium_rtl{background-position:left -188px;font-size:11px;line-height:14px}\na.gs_button_medium:active{background-position:left -210px}\n.gs_button_medium_rtl{background-position:right -396px}\n.gs_button_text_rtl,\n.gs_button_medium_rtl .gs_button_text{padding:2px 6px 3px 6px;margin-right:22px}\na.gs_button_medium_rtl:active{background-position:right -418px}\n.gs_button_small,\n.gs_button_small_rtl{background-position:left -232px;font-size:10px;line-height:10px}\n.gs_button_small .gs_button_text{padding:2px 6px 3px;margin-left:17px}\na.gs_button_small:active,\n.gs_button_small:active{background-position:left -250px}\n.gs_button_small_rtl{background-position:right -440px}\n.gs_button_small_rtl .gs_button_text{padding:2px 6px;margin-right:18px}\na.gs_button_small_rtl:active{background-position:right -458px}\n.gs_connect_bar_container div,\n.gs_connect_bar_container span,\n.gs_connect_bar_container a,\n.gs_connect_bar_container img,\n.gs_connect_bar_container strong{background:none;border-spacing:0;border:0;direction:ltr;font-style:normal;font-variant:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal;vertical-align:baseline}\n.gs_connect_bar_container{position:fixed;left:0 !important;right:0 !important;height:42px !important;padding:0 25px !important;margin:0 !important;vertical-align:middle !important;border-bottom:1px solid #333 !important;background:#3b5998 !important;z-index:99999999 !important;overflow:hidden !important}\n.gs_connect_bar_container_ie6{position:absolute;top:expression(document.compatMode==\"CSS1Compat\"? document.documentElement.scrollTop+\"px\":body.scrollTop+\"px\")}\n.gs_connect_bar{position:relative;margin:auto;height:100\u0025;width:100\u0025;padding:6px 0 0 0 !important;background:none;color:#fff !important;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif !important;font-size:13px !important;font-style:normal !important;font-variant:normal !important;font-weight:normal !important;letter-spacing:normal !important;line-height:1 !important;text-decoration:none !important;text-indent:0 !important;text-shadow:none !important;text-transform:none !important;white-space:normal !important;word-spacing:normal !important}\n.gs_connect_bar a:hover{color:#fff}\n.gs_connect_bar .gs_profile img{height:30px;width:30px;vertical-align:middle;margin:0 6px 5px 0}\n.gs_connect_bar div a,\n.gs_connect_bar span,\n.gs_connect_bar span a{color:#bac6da;font-size:11px;text-decoration:none}\n.gs_connect_bar .gs_buttons{float:right;margin-top:7px}\n.gs_edge_widget_with_comment{position:relative;*z-index:1000}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget{position:absolute}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_ltr{left:-4px}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_rtl{left:2px}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget{left:0}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget .GS_Loader{left:10\u0025}\n.gs_share_count_wrapper{position:relative;float:left}\n.gs_share_count{background:#b0b9ec none repeat scroll 0 0;color:#333;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;text-align:center}\n.gs_share_count_inner{background:#e8ebf2;display:block}\n.gs_share_count_right{margin-left:-1px;display:inline-block}\n.gs_share_count_right .gs_share_count_inner{border-top:solid 1px #e8ebf2;border-bottom:solid 1px #b0b9ec;margin:1px 1px 0 1px;font-size:10px;line-height:10px;padding:2px 6px 3px;font-weight:bold}\n.gs_share_count_top{display:block;letter-spacing:-1px;line-height:34px;margin-bottom:7px;font-size:22px;border:solid 1px #b0b9ec}\n.gs_share_count_nub_top{border:none;display:block;position:absolute;left:7px;top:35px;margin:0;padding:0;width:6px;height:7px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zU-r-bSOHtKbCGYI.png)}\n.gs_share_count_nub_right{border:none;display:inline-block;padding:0;width:5px;height:10px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zX-r-i_oIVTKMYsL.png);vertical-align:top;background-position:right 5px;z-index:10;left:2px;margin:0 2px 0 0;position:relative}\n.gs_share_no_count{display:none}\n.gs_share_size_Small .gs_share_count_right .gs_share_count_inner{font-size:10px}\n.gs_share_size_Medium .gs_share_count_right .gs_share_count_inner{font-size:11px;padding:2px 6px 3px;letter-spacing:-1px;line-height:14px}\n.gs_share_size_Large .gs_share_count_right .gs_share_count_inner{font-size:13px;line-height:16px;padding:2px 6px 4px;font-weight:normal;letter-spacing:-1px}\n.gs_share_count_hidden .gs_share_count_nub_top,\n.gs_share_count_hidden .gs_share_count_top,\n.gs_share_count_hidden .gs_share_count_nub_right,\n.gs_share_count_hidden .gs_share_count_right{visibility:hidden}\n#gs_social_bar_container{position:fixed;left:0;right:0;height:34px;padding:0 25px;z-index:999999999}\n.gs_social_bar_iframe{position:relative;float:right;opacity:0;-moz-opacity:0;filter:alpha(opacity=0)}\n.gs_social_bar_iframe_bottom_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop+document.documentElement.clientHeight-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n.gs_social_bar_iframe_top_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n .gs_dialog_content .dialog_title {background:url(https:\/\/s3.amazonaws.com\/static.gamescdn.com\/img\/bgSprite.png?1) repeat-x scroll 0 -124px #01A3C2; padding:10px; }.gs_dialog_content .dialog_title > span {background:url(http:\/\/static.gamescdn.com\/img\/favicon.png) no-repeat 0 50\u0025; padding:1px 0 1px 23px;} .gs_dialog_content .dialog_title, .gs_dialog_content .dialog_content {border:0;} .gs_dialog_content .dialog_footer { border-left-width:0; border-right-width:0;}", ["gs.css.base", "gs.css.dialog", "gs.css.iframewidget", "gs.css.button", "gs.css.connectbarwidget", "gs.css.edgecommentwidget", "gs.css.sendbuttonformwidget", "gs.css.sharebutton", "gs.css.socialbarwidget"]);
 }
