@@ -13,21 +13,24 @@ if (!window.GSConstants) {
 			if (!GSConstants._qp[k])
 				GSConstants._qp[k] = d;
 			return GSConstants._qp[k];
+		},
+		ensureSlash: function(url) {
+		    if (url[url.length-1]!='/')url+='/';
+		    return url;
 		}
 	}
 	GSConstants._defaultDomain = "gamestamper.com";
-	GSConstants._baseDomain= GSConstants.getParam("www",GSConstants._defaultDomain).replace(/(http:\/\/|https:\/\/)/,"").replace(/www\./,"");
-	if (!GSConstants._baseDomain[GSConstants._baseDomain.length-1]=="/") GSConstants._baseDomain+="/";
-	GSConstants._baseStaticDomainAndProto= "http:\/\/static.gamestamper.com\/";
-	GSConstants._baseStaticDomainAndProtoSsl= "https:\/\/static.gamestamper.com\/";
+	GSConstants._baseDomain= GSConstants.getParam("gswww",GSConstants._defaultDomain).replace(/(http:\/\/|https:\/\/)/,"").replace(/www\./,"");
+	GSConstants._baseStaticDomainAndProto= "http://static.gamestamper.com/";
+	GSConstants._baseStaticDomainAndProtoSsl= "https://static.gamestamper.com/";
 	GSConstants._baseCDDomainAndProto= "http:\/\/static.gamescdn.com";
 	GSConstants._baseCDDomainAndProtoSsl= "https:\/\/s3.amazonaws.com\/static.gamescdn.com";
 	GSConstants._ps= "https";
 	GSConstants._wwwDot= "";
 	GSConstants._useDebug= 0;
 	GSConstants._swf= "sdks/js/XdComm.swf";
-	GSConstants._graph= GSConstants.getParam('graph',GSConstants._ps+'://graph.'+GSConstants._baseDomain+'/');
-	if (!GSConstants._graph[GSConstants._graph.length-1]!='/') GSConstants._graph+='/';
+	GSConstants._graph= GSConstants.getParam('gsgraph',GSConstants._ps+'://graph.'+GSConstants._baseDomain+'/');
+	GSConstants._lstatic= GSConstants.getParam('gsstatic',GSConstants._baseStaticDomainAndProto);
 }
 
 if (!window.GS) window.GS = {
@@ -38,16 +41,17 @@ if (!window.GS) window.GS = {
     _inCanvas: ((window.location.search.indexOf('gs_sig_in_iframe=1') > -1) || (window.location.search.indexOf('session=') > -1) || (window.location.search.indexOf('signed_request=') > -1)),
     _https: (window.name.indexOf('_gs_https') > -1),
     _domain: {
-        api: GSConstants._ps+'://api.'+GSConstants._baseDomain+'/',
-        api_read: GSConstants._ps+'://api-read.'+GSConstants._baseDomain+'/',
-        cdn: GSConstants._baseCDDomainAndProto+'/',
-        https_cdn:GSConstants._baseCDDomainAndProtoSsl,
-        graph: GSConstants._graph,
-        staticgs: GSConstants._baseStaticDomainAndProto+'/',
-        https_staticgs: GSConstants._baseStaticDomainAndProtoSsl+'/',
-        www: window.location.protocol + '//www.'+GSConstants._baseDomain+'/',
-		def_www: window.location.protocol + '//www.'+GSConstants._defaultDomain+'/',
-        https_www: GSConstants._ps+'://www.'+GSConstants._baseDomain+'/'
+        api: GSConstants.ensureSlash(GSConstants._ps+'://api.'+GSConstants._baseDomain),
+        api_read: GSConstants.ensureSlash(GSConstants._ps+'://api-read.'+GSConstants._baseDomain),
+        cdn: GSConstants.ensureSlash(GSConstants._baseCDDomainAndProto),
+        https_cdn:GSConstants.ensureSlash(GSConstants._baseCDDomainAndProtoSsl),
+        graph: GSConstants.ensureSlash(GSConstants._graph),
+        staticgs: GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProto),
+        https_staticgs: GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProtoSsl),
+        www: GSConstants.ensureSlash(window.location.protocol + '//www.'+GSConstants._baseDomain),
+	def_www: GSConstants.ensureSlash(window.location.protocol + '//www.'+GSConstants._defaultDomain),
+        https_www: GSConstants.ensureSlash(GSConstants._ps+'://www.'+GSConstants._baseDomain),
+	lstatic:GSConstants.ensureSlash(GSConstants._lstatic)
     },
     _locale: null,
     _localeIsRtl: false,
@@ -61,6 +65,8 @@ if (!window.GS) window.GS = {
             return (window.location.protocol == GSConstants._ps+':' || GS._https) ? GS._domain.https_cdn : GS._domain.cdn;
         case 'graph':
             return GS._domain.graph;
+		case 'lstatic':
+            return GS._domain.lstatic;
         case 'staticgs':
             return GS._https ? GS._domain.https_staticgs : GS._domain.staticgs;
         case 'https_staticgs':
@@ -723,7 +729,11 @@ GS.provide('Arbiter', {
                 return;
             } catch (a) {}
         }
-        var h = (GS.getDomain((b ? 'https_' : '') + 'staticgs')+ 'connect/canvas_proxy.htm#' + GS.QS.encode({
+		var key = !f || f=="parent.parent" ? "lstatic" : "staticgs" ;
+		var dmn = GS.getDomain(key);
+		if (location.protocol=='https')
+			dmn = dmn.replace('http://','https://');
+        var h = (dmn+ 'connect/canvas_proxy.htm#' + GS.QS.encode({
             method: c,
             params: GS.JSON.stringify(e || {}),
             relation: f
@@ -1046,34 +1056,49 @@ GS.provide('Dialog', {
             return b != a;
         });
     },
-    create: function (e) {
-        e = e || {};
-        if (e.loader) GS.Dialog._showLoader(e.onClose, e.loaderWidth);
+    create: function (config) {
+        config = config || {};
+        if (config.loader)
+        	GS.Dialog._showLoader(config.onClose, config.loaderWidth);
         var d = document.createElement('div'),
             c = document.createElement('div'),
-            a = 'gs_dialog';
-        if (e.closeIcon && e.onClose) {
-            var b = document.createElement('a');
-            b.className = 'gs_dialog_close_icon';
-            b.onclick = e.onClose;
-            d.appendChild(b);
+            className = 'gs_dialog';
+
+        // create 'close' link
+        if (config.closeIcon && config.onClose) {
+            var closeAnchor = document.createElement('a');
+            closeAnchor.className = 'gs_dialog_close_icon';
+            closeAnchor.onclick = config.onClose;
+            d.appendChild(closeAnchor);
         }
+
+		// determine className based on browser type
         if (GS.Dom.getBrowserType() == 'ie') {
-            a += ' gs_dialog_legacy';
+            className += ' gs_dialog_legacy';
+            // add extra nodes for IE
             GS.Array.forEach(['vert_left', 'vert_right', 'horiz_top', 'horiz_bottom', 'top_left', 'top_right', 'bottom_left', 'bottom_right'], function (g) {
                 var h = document.createElement('span');
                 h.className = 'gs_dialog_' + g;
                 d.appendChild(h);
             });
-        } else a += ' gs_dialog_advanced';
-        if (e.content) GS.Content.append(e.content, c);
-        d.className = a;
-        var f = parseInt(e.width, 10);
-        if (!isNaN(f)) d.style.width = f + 'px';
+        } else {
+        	className += ' gs_dialog_advanced';
+		}
+
+		// if content was supplied, add it to the DOM
+        if (config.content) {
+        	GS.Content.append(config.content, c);
+		}
+
+        d.className = className;
+        var width = parseInt(config.width, 10);
+        if (!isNaN(width))
+        	d.style.width = width + 'px';
         c.className = 'gs_dialog_content';
         d.appendChild(c);
         GS.Content.append(d);
-        if (e.visible) GS.Dialog.show(d);
+        if (config.visible)
+        	GS.Dialog.show(d);
         return c;
     },
     show: function (a) {
@@ -1101,12 +1126,12 @@ GS.provide('Dialog', {
     }
 });
 GS.provide('', {
-    ui: function (config, b) {
+    ui: function (config, b, dmn) {
         if (!config.method) {
             GS.log('"method" is a required parameter for GS.ui().');
             return;
         }
-        var a = GS.UIServer.prepareCall(config, b);
+        var a = GS.UIServer.prepareCall(config, b, dmn);
         if (!a) return;
         var d = a.params.display;
         if (d == 'dialog') d = 'iframe';
@@ -1130,7 +1155,8 @@ GS.provide('UIServer', {
         }
         return a;
     },
-    prepareCall: function (config, b) {
+    prepareCall: function (config, b, dmn) {
+	dmn = dmn || 'def_www';
         var method = config.method.toLowerCase(),
             f = GS.UIServer.Methods[method] || {
                 size: {
@@ -1145,7 +1171,8 @@ GS.provide('UIServer', {
             app_id: GS._apiKey,
             locale: GS._locale,
             sdk: 'joey',
-			graph: GSConstants._graph,
+	    	graph: GSConstants._graph,
+	    	gsuser: GSConstants.getParam('gsuser',''),
             access_token: d && GS._session && GS._session.access_token || undefined
         });
         config.display = GS.UIServer.getDisplayMode(f, config);
@@ -1157,7 +1184,7 @@ GS.provide('UIServer', {
             cb: b,
             id: guid,
             size: f.size || {},
-            url: GS.getDomain('def_www') + f.url,
+            url: GS.getDomain(dmn) + f.url,
             params: config
         };
         var j = f.transform ? f.transform : GS.UIServer.genericTransform;
@@ -1299,7 +1326,7 @@ GS.provide('UIServer', {
             if (c.type == 'resize') {
                 if (c.height) d.style.height = c.height + 'px';
                 if (c.width) d.style.width = c.width + 'px';
-                GS.Arbiter.inform('resize.ack', {}, 'parent.frames[' + d.name + ']', true);
+                GS.Arbiter.inform('resize.ack', {}, 'parent.frames[' + d.name + ']',location.protocol=='https');
                 GS.Dialog.show(d);
             }
         }, relation, true);
@@ -1358,7 +1385,7 @@ GS.provide('', {
         GS.ui({
             method: 'auth.status',
             display: 'hidden'
-        }, c);
+        }, c, 'www');
     },
     getSession: function () {
         return GS._session;
@@ -3935,16 +3962,17 @@ void(0);
 
 GS.provide("", {
     "_domain": {
-        "api": GSConstants._ps+":\/\/api."+GSConstants._baseDomain+"\/",
-        "api_read": GSConstants._ps+":\/\/api-read."+GSConstants._baseDomain+"\/",
-        "cdn": GSConstants._baseCDDomainAndProto+"\/",
-        "graph": GSConstants._graph,
-        "https_cdn": GSConstants._baseCDDomainAndProtoSsl+"\/",
-        "https_staticgs": GSConstants._baseStaticDomainAndProtoSsl+"\/",
-        "https_www": GSConstants._ps+":\/\/www."+GSConstants._baseDomain+"\/",
-        "staticgs": GSConstants._baseStaticDomainAndProto+"\/",
-        "www": "http:\/\/www."+GSConstants._baseDomain+"\/",
-		"def_www": window.location.protocol + "\/\/www."+GSConstants._defaultDomain+"\/"
+        "api": GSConstants.ensureSlash(GSConstants._ps+":\/\/api."+GSConstants._baseDomain),
+        "api_read": GSConstants.ensureSlash(GSConstants._ps+":\/\/api-read."+GSConstants._baseDomain),
+        "cdn": GSConstants.ensureSlash(GSConstants._baseCDDomainAndProto),
+        "graph": GSConstants.ensureSlash(GSConstants._graph),
+        "https_cdn": GSConstants.ensureSlash(GSConstants._baseCDDomainAndProtoSsl),
+        "https_staticgs": GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProtoSsl),
+        "https_www": GSConstants.ensureSlash(GSConstants._ps+":\/\/www."+GSConstants._baseDomain),
+        "staticgs": GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProto),
+        "www": GSConstants.ensureSlash("http:\/\/www."+GSConstants._baseDomain),
+	"def_www": GSConstants.ensureSlash(window.location.protocol + "\/\/www."+GSConstants._defaultDomain),
+	"lstatic":GSConstants.ensureSlash(GSConstants._lstatic)
     },
     "_locale": "en_US",
     "_localeIsRtl": false
