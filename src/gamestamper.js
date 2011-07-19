@@ -115,6 +115,8 @@ if (!window.GS) window.GS = {
         return 'f' + (Math.random() * (1 << 30)).toString(16).replace('.', '');
     },
     log: function (a) {
+	if (!GSConstants.getParam('debug'))
+	    return;
         if (GS._logging) if (window.Debug && window.Debug.writeln) {
             window.Debug.writeln(a);
         }else if (window.console) window.console.log(Array.prototype.slice.call(arguments));
@@ -217,40 +219,45 @@ GS.provide('Content', {
         }
         return GS.Content.append(a, GS.Content._hiddenRoot);
     },
-    insertIframe: function (e) {
-        e.id = e.id || GS.guid();
-        e.name = e.name || GS.guid();
-        var a = GS.guid(),
-            f = false,
-            d = false;
-        GS.Content._callbacks[a] = function () {
-            if (f && !d) {
-                d = true;
-                e.onload && e.onload(e.root.firstChild);
+    insertIframe: function (config) {
+        config.id = config.id || GS.guid();
+        config.name = config.id;
+        var initialized = false,
+            loaded = false;
+        GS.Content._callbacks[config.id] = function () {
+            if (initialized && !loaded) {
+                loaded = true;
+                config.onload && config.onload(config.root.firstChild);
             }
         };
         if (document.attachEvent) {
-            var b = ('<iframe' + ' id="' + e.id + '"' + ' name="' + e.name + '"' + (e.title ? ' title="' + e.title + '"' : '') + (e.className ? ' class="' + e.className + '"' : '') + ' style="border:none;' + (e.width ? 'width:' + e.width + 'px;' : '') + (e.height ? 'height:' + e.height + 'px;' : '') + '"' + ' src="' + e.url + '"' + ' frameborder="0"' + ' scrolling="no"' + ' allowtransparency="true"' + ' onload="GS.Content._callbacks.' + a + '()"' + '></iframe>');
-            e.root.innerHTML = '<iframe src="javascript:false"' + ' frameborder="0"' + ' scrolling="no"' + ' style="height:1px"></iframe>';
-            f = true;
+            var iframe = ('<iframe' + ' id="' + config.id + '"' + ' name="' + config.name + '"'
+		+ (config.title ? ' title="' + config.title + '"' : '')
+		+ (config.className ? ' class="' + config.className + '"' : '')
+		+ ' style="border:none;' + (config.width ? 'width:' + config.width + 'px;' : '')
+		+ (config.height ? 'height:' + config.height + 'px;' : '') + '"' + ' src="'
+		+ config.url + '"' + ' frameborder="0"' + ' scrolling="no"' + ' allowtransparency="true"'
+		+ ' onload="GS.Content._callbacks.' + config.id + '()"' + '></iframe>');
+            config.root.innerHTML = '<iframe src="javascript:false"' + ' frameborder="0"' + ' scrolling="no"' + ' style="height:1px"></iframe>';
+            initialized = true;
             window.setTimeout(function () {
-                e.root.innerHTML = b;
+                config.root.innerHTML = iframe;
             }, 0);
         } else {
-            var c = document.createElement('iframe');
-            c.id = e.id;
-            c.name = e.name;
-            c.onload = GS.Content._callbacks[a];
-            c.scrolling = 'no';
-            c.style.border = 'none';
-            c.style.overflow = 'hidden';
-            if (e.title) c.title = e.title;
-            if (e.className) c.className = e.className;
-            if (e.height) c.style.height = e.height + 'px';
-            if (e.width) c.style.width = e.width + 'px';
-            e.root.appendChild(c);
-            f = true;
-            c.src = e.url;
+            var iframe = document.createElement('iframe');
+            iframe.id = config.id;
+            iframe.name = config.name;
+            iframe.onload = GS.Content._callbacks[config.id];
+            iframe.scrolling = 'no';
+            iframe.style.border = 'none';
+            iframe.style.overflow = 'hidden';
+            if (config.title) iframe.title = config.title;
+            if (config.className) iframe.className = config.className;
+            if (config.height) iframe.style.height = config.height + 'px';
+            if (config.width) iframe.style.width = config.width + 'px';
+            config.root.appendChild(iframe);
+            initialized = true;
+            iframe.src = config.url;
         }
     },
     submitToTarget: function (c, b) {
@@ -712,7 +719,8 @@ GS.provide('XD', {
     },
     recv: function (response) {
         if (typeof response == 'string') response = GS.QS.decode(response);
-        var callbacks = GS.XD._callbacks[response.cb];
+	if (response.params && typeof response.params == 'string') response.params = GS.JSON.parse(response.params);
+        var callbacks = GS.XD._callbacks[response.cb] || GS.XD._callbacks[response.method];
 	if (!callbacks) return;
 	for (var j=0,l=callbacks.length;j<l;j++) {
 	    var callback = callbacks[j];
@@ -920,6 +928,20 @@ GS.provide('String', {
     }
 });
 GS.provide('Dom', {
+    scrollTop: function() {
+	    return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop;
+    },
+    resize: function(params) {
+	var frame = GS.$id(params.frame);
+	if (params.height) {
+	    GS.Dom.setStyle(frame,'height',params.height+"px");
+	    GS.Dom.setStyle(frame,'top',(Math.max(parseInt((window.innerHeight - parseInt(params.height)) / 2.5), 5) + GS.Dom.scrollTop())+"px");
+	}
+	if (params.width) {
+	    GS.Dom.setStyle(frame,'width',params.width+"px");
+	}
+	//GS.XD.send()
+    },
     containsCss: function (el, c) {
         var b = ' ' + el.className + ' ';
         return b.indexOf(' ' + c + ' ') >= 0;
@@ -957,6 +979,7 @@ GS.provide('Dom', {
         return d;
     },
     setStyle: function (a, c, d) {
+	GS.log('setting style ',a,c,d);
         var b = a.style;
         if (c == 'opacity') {
             if (d >= 100) d = 99.999;
@@ -1053,6 +1076,9 @@ GS.provide('Dom', {
             eval(oldonload);
         } else oldonload();
     };
+   GS.XD.subscribe('setSize',function(evt){
+	GS.Dom.resize(evt.params);
+    },true);
 })();
 GS.provide('Dialog', {
     _loaderEl: null,
@@ -1319,34 +1345,34 @@ GS.provide('UIServer', {
         delete a.size;
         GS.XD.inform('showDialog', a);
     },
-    _insertIframe: function (b) {
-        GS.UIServer._active[b.id] = false;
-        var a = function (c) {
-            if (b.id in GS.UIServer._active) GS.UIServer._active[b.id] = c;
+    _insertIframe: function (config) {
+        GS.UIServer._active[config.id] = false;
+        var registerFrame = function (frame) {
+            if (config.id in GS.UIServer._active) GS.UIServer._active[config.id] = frame;
         };
-        if (b.post) {
+        if (config.post) {
             GS.Content.insertIframe({
                 url: 'about:blank',
-                root: b.root,
-                className: b.className,
-                width: b.size.width,
-                height: b.size.height,
+                root: config.root,
+                className: config.className,
+                width: config.size.width,
+                height: config.size.height,
                 onload: function (c) {
-                    a(c);
+                    registerFrame(c);
                     GS.Content.submitToTarget({
-                        url: b.url,
+                        url: config.url,
                         target: c.name,
-                        params: b.params
+                        params: config.params
                     });
                 }
             });
         } else GS.Content.insertIframe({
-            url: b.url,
-            root: b.root,
-            className: b.className,
-            width: b.size.width,
-            height: b.size.height,
-            onload: a
+            url: config.url,
+            root: config.root,
+            className: config.className,
+            width: config.size.width,
+            height: config.size.height,
+            onload: registerFrame
         });
     },
     _triggerDefault: function (a) {
@@ -1400,7 +1426,7 @@ GS.provide('UIServer', {
                 window.setTimeout(function () {
                     c.parentNode.parentNode.removeChild(c.parentNode);
                 }, 3000);
-            } else if (GS.Dom.containsCss(c, 'GS_UI_Dialog')) GS.Dialog.remove(c);
+            } else if (GS.Dom.containsCss(c, 'GS_UI_Dialog')) GS.Dialog.remove(c); //
         } catch (d) {}
         try {
             if (c.close) {
