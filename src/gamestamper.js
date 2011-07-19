@@ -19,18 +19,25 @@ if (!window.GSConstants) {
 		    return url;
 		}
 	}
+	GSConstants._isDev = GSConstants.getParam('dev', false);
 	GSConstants._defaultDomain = "gamestamper.com";
 	GSConstants._baseDomain= GSConstants.getParam("gswww",GSConstants._defaultDomain).replace(/(http:\/\/|https:\/\/)/,"").replace(/www\./,"");
 	GSConstants._baseStaticDomainAndProto= "http://static.gamestamper.com/";
 	GSConstants._baseStaticDomainAndProtoSsl= "https://static.gamestamper.com/";
-	GSConstants._baseCDDomainAndProto= "http:\/\/static.gamescdn.com";
+	GSConstants._baseCDDomainAndProto= "http:\/\/static."+(GSConstants._isDev ? "gamestamper":"gamescdn")+".com";
 	GSConstants._baseCDDomainAndProtoSsl= "https:\/\/s3.amazonaws.com\/static.gamescdn.com";
 	GSConstants._ps= "https";
 	GSConstants._wwwDot= "";
-	GSConstants._useDebug= 0;
+	GSConstants._useDebug= GSConstants.getParam('debug', false);
 	GSConstants._swf= "sdks/js/XdComm.swf";
 	GSConstants._graph= GSConstants.getParam('gsgraph',GSConstants._ps+'://graph.'+GSConstants._baseDomain+'/');
 	GSConstants._lstatic= GSConstants.getParam('gsstatic',GSConstants._baseStaticDomainAndProto);
+	GSConstants.sizes = {
+	    borderSize:10,
+	    pay:{height:160,width:400},
+	    apprequests:{width:475,height:552},
+	    feed:{height:266}
+	}
 }
 
 if (!window.GS) window.GS = {
@@ -43,15 +50,16 @@ if (!window.GS) window.GS = {
     _domain: {
         api: GSConstants.ensureSlash(GSConstants._ps+'://api.'+GSConstants._baseDomain),
         api_read: GSConstants.ensureSlash(GSConstants._ps+'://api-read.'+GSConstants._baseDomain),
+        apps: GSConstants.ensureSlash(GSConstants.getParam('gsapps')),
         cdn: GSConstants.ensureSlash(GSConstants._baseCDDomainAndProto),
         https_cdn:GSConstants.ensureSlash(GSConstants._baseCDDomainAndProtoSsl),
         graph: GSConstants.ensureSlash(GSConstants._graph),
         staticgs: GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProto),
         https_staticgs: GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProtoSsl),
         www: GSConstants.ensureSlash(window.location.protocol + '//www.'+GSConstants._baseDomain),
-	def_www: GSConstants.ensureSlash(window.location.protocol + '//www.'+GSConstants._defaultDomain),
+        def_www: GSConstants.ensureSlash(window.location.protocol + '//www.'+GSConstants._defaultDomain),
         https_www: GSConstants.ensureSlash(GSConstants._ps+'://www.'+GSConstants._baseDomain),
-	lstatic:GSConstants.ensureSlash(GSConstants._lstatic)
+        lstatic:GSConstants.ensureSlash(GSConstants._lstatic)
     },
     _locale: null,
     _localeIsRtl: false,
@@ -61,6 +69,8 @@ if (!window.GS) window.GS = {
             return GS._domain.api;
         case 'api_read':
             return GS._domain.api_read;
+        case 'apps':
+            return GS._domain.apps;
         case 'cdn':
             return (window.location.protocol == GSConstants._ps+':' || GS._https) ? GS._domain.https_cdn : GS._domain.cdn;
         case 'graph':
@@ -107,10 +117,10 @@ if (!window.GS) window.GS = {
     log: function (a) {
         if (GS._logging) if (window.Debug && window.Debug.writeln) {
             window.Debug.writeln(a);
-        }else if (window.console) window.console.log(a);
+        }else if (window.console) window.console.log(Array.prototype.slice.call(arguments));
         if (GS.Event) GS.Event.fire('gs.log', a);
     },
-    $: function (a) {
+    $id: function (a) {
         return document.getElementById(a);
     }
 };
@@ -183,7 +193,7 @@ GS.provide('Content', {
     _callbacks: {},
     append: function (a, c) {
         if (!c) if (!GS.Content._root) {
-            GS.Content._root = c = GS.$('gs-root');
+            GS.Content._root = c = GS.$id('gs-root');
             if (!c) {
                 GS.log('The "gs-root" div has not been created.');
                 return;
@@ -263,8 +273,7 @@ GS.provide('Content', {
 });
 GS.provide('Flash', {
     _minVersions: [
-        [9, 0, 159, 0],
-        [10, 0, 22, 87]
+	[10, 0, 22, 87]
     ],
     _swfPath: GSConstants._swf,
     _callbacks: [],
@@ -278,22 +287,26 @@ GS.provide('Flash', {
         };
         var a = !! document.attachEvent,
             c = GS.getDomain('cdn') + GS.Flash._swfPath,
-            b = ('<object ' + 'type="application/x-shockwave-flash" ' + 'id="XdComm" ' + (a ? 'name="XdComm" ' : '') + (a ? '' : 'data="' + c + '" ') + (a ? 'classid="clsid:d27cdb6e-ae6d-11cf-96b8-444553540000" ' : '') + 'allowscriptaccess="always">' + '<param name="movie" value="' + c + '"></param>' + '<param name="allowscriptaccess" value="always"></param>' + '</object>');
+            b = ('<object ' + 'type="application/x-shockwave-flash" ' + 'id="XdComm" ' + (a ? 'name="XdComm" ' : '') + (a ? '' : 'data="' + c + '" ') + (a ? 'classid="clsid:d27cdb6e-ae6d-11cf-96b8-444553540000" ' : '') + 'allowscriptaccess="always">'
+		+ '<param name="movie" value="' + c + '"></param>'
+		+ '<param name="allowscriptaccess" value="always"></param>'
+		+ (GSConstants._useDebug ? '<param name="flashvars" value="debug=true"></param>' : '')
+		+ '</object>');
         GS.Content.appendHidden(b);
     },
     hasMinVersion: function () {
         if (typeof GS.Flash._hasMinVersion === 'undefined') {
             var i, a, b, h = [];
-            try {
-                i = new ActiveXObject('ShockwaveFlash.ShockwaveFlash').GetVariable('$version');
-            } catch (j) {
-                if (navigator.mimeTypes.length > 0) {
-                    var mimeType = 'application/x-shockwave-flash';
-                    if (navigator.mimeTypes[mimeType].enabledPlugin) {
-                        var name = 'Shockwave Flash';
-                        i = (navigator.plugins[name + ' 2.0'] || navigator.plugins[name]).description;
-                    }
-                }
+            if (window.ActiveXObject) {
+		try {
+		    i = new ActiveXObject('ShockwaveFlash.ShockwaveFlash').GetVariable('$version');
+		} catch (j) {
+		}
+	    }
+	    if (!i && navigator.mimeTypes.length > 0) {
+		if (navigator.mimeTypes['application/x-shockwave-flash'].enabledPlugin) {
+		    i = (navigator.plugins['Shockwave Flash 2.0'] || navigator.plugins['Shockwave Flash']).description;
+		}
             }
             if (i) {
                 var f = i.replace(/\D+/g, ',').match(/^,?(.+),?$/)[1].split(',');
@@ -455,7 +468,7 @@ GS.provide('JSON', {
                 continue;
             } else if (typeof d == 'string') {
                 a[b] = d;
-            } else a[b] = GS.JSON.stringify(d);
+            }else a[b] = GS.JSON.stringify(d);
         }
         return a;
     }
@@ -522,7 +535,6 @@ GS.provide('ApiServer', {
     },
     oauthRequest: function (b, f, c, e, a) {
         if (GS._session && GS._session.access_token && !e.access_token) e.access_token = GS._session.access_token;
-        e.sdk = 'joey';
         e.pretty = 0;
         var d = a;
         a = function (h) {
@@ -624,15 +636,15 @@ GS.provide('XD', {
     _origin: null,
     _transport: null,
     _callbacks: {},
-    _forever: {},
     init: function (a) {
         if (GS.XD._origin) return;
-        if (window.addEventListener && !window.attachEvent && window.postMessage) {
+	var c = GSConstants.getParam('xd','postmessage');
+        if (window.postMessage && c=="postmessage") {
             GS.XD._origin = (window.location.protocol + '//' + window.location.host + '/' + GS.guid());
             GS.XD.PostMessage.init();
             GS.XD._transport = 'postmessage';
-        } else if (!a && GS.Flash.hasMinVersion()) {
-            GS.XD._origin = (window.location.protocol + '//' + document.domain + '/' + GS.guid());
+        } else if (!a && GS.Flash.hasMinVersion() && c=="flash") {
+            GS.XD._origin = (window.location.protocol + '//' + document.domain + '/' );
             GS.XD.Flash.init();
             GS.XD._transport = 'flash';
         } else {
@@ -647,16 +659,31 @@ GS.provide('XD', {
             g = f[a];
             if (g === 'opener' || g === 'parent' || g === 'top') {
                 e = e[g];
-            } else if (d = /^frames\[['"]?([a-zA-Z0-9-_]+)['"]?\]$/.exec(g)) {
+            }else if (d = /^frames\[['"]?([a-zA-Z0-9-_]+)['"]?\]$/.exec(g)) {
                 e = e.frames[d[1]];
             } else
             throw new SyntaxError('Malformed id to resolve: ' + b + ', pt: ' + g);
         }
         return e;
     },
+    _getXdProxyQuery: function() {
+	var s = '';
+	var p= '';
+	var res = '';
+	if (GSConstants._isDev) {
+	    s= '?';
+	    res = 'dev=1';
+	    p = '&';   
+	}
+	if (GSConstants._useDebug) {
+	    s= '?';
+	    res += p+'debug=1';
+	}
+	return s+res;
+    },
     handler: function (callback, relation, forever) {
         if (window.location.toString().indexOf(GS.XD.Fragment._magic) > 0) return 'javascript:false;//';
-        var xdProxyUrl = GS.getDomain('cdn') + 'connect/xd_proxy.htm#',
+        var xdProxyUrl = GS.getDomain('cdn')+'connect/xd_proxy.htm'+GS.XD._getXdProxyQuery()+'#',
             guid = GS.guid();
         if (GS.XD._transport == 'fragment') {
             xdProxyUrl = GS.XD.Fragment._channelUrl;
@@ -664,8 +691,10 @@ GS.provide('XD', {
             if (d > 0) xdProxyUrl = xdProxyUrl.substr(0, d);
             xdProxyUrl += ((xdProxyUrl.indexOf('?') < 0 ? '?' : '&') + GS.XD.Fragment._magic + '#?=&');
         }
-        if (forever) GS.XD._forever[guid] = true;
-        GS.XD._callbacks[guid] = callback;
+	else if (GS.XD._transport == 'flash') {
+	    xdProxyUrl+='fc='+GS.XD.Flash.getChannel(relation)+'&';
+	}
+        GS.XD.subscribe(guid,callback,forever);
         return xdProxyUrl + GS.QS.encode({
             cb: guid,
             origin: GS.XD._origin,
@@ -673,83 +702,106 @@ GS.provide('XD', {
             transport: GS.XD._transport
         });
     },
-    recv: function (b) {
-        if (typeof b == 'string') b = GS.QS.decode(b);
-        var a = GS.XD._callbacks[b.cb];
-        if (!GS.XD._forever[b.cb]) delete GS.XD._callbacks[b.cb];
-        a && a(b);
+    subscribe:function(key,callback,forever){
+	GS.log('gssdk subscribing method'+(forever ? ' (persistent)':''),key,callback);
+	GS.XD._callbacks[key] = GS.XD._callbacks[key] || [];
+	GS.XD._callbacks[key].push({
+		fn: callback,
+		forever: forever
+	});
+    },
+    recv: function (response) {
+        if (typeof response == 'string') response = GS.QS.decode(response);
+        var callbacks = GS.XD._callbacks[response.cb];
+	if (!callbacks) return;
+	for (var j=0,l=callbacks.length;j<l;j++) {
+	    var callback = callbacks[j];
+	    GS.log('gssdk recv',response.cb,GS.XD._callbacks,callback);
+	    if (!callback) continue;
+	    if (!callback.forever) {
+		GS.log('deleting callback '+j+' for '+response.cb);
+		delete GS.XD._callbacks[response.cb][j];
+	    }
+	    callback.fn(response);
+	}
+	
     },
     PostMessage: {
         init: function () {
             var a = GS.XD.PostMessage.onMessage;
             window.addEventListener ? window.addEventListener('message', a, false) : window.attachEvent('onmessage', a);
+            GS.XD.PostMaster = this;
         },
         onMessage: function (event) {
             GS.XD.recv(event.data);
-        }
+        },
+	send: function(msg,dmn){
+	    var h = (dmn+ 'connect/xd_proxy.htm'+GS.XD._getXdProxyQuery()+'#' + msg),
+			g = GS.Content.appendHidden('');
+	    GS.Content.insertIframe({
+		url: h,
+		root: g,
+		width: 1,
+		height: 1,
+		onload: function () {
+		    setTimeout(function () {
+			g.parentNode.removeChild(g);
+		    }, 10);
+		}
+	    });
+	}
     },
     Flash: {
         init: function () {
+	    GS.XD.Flash._canvasChannel = GSConstants.getParam('cv', 'canvas');
+	    GS.XD.Flash._pageChannel = GSConstants.getParam('pg', 'page');
+	    GS.XD.Flash._xdpChannel = GSConstants.getParam('xdp', 'xdp');
             GS.Flash.onReady(function () {
-                document.XdComm.postMessage_init('GS.XD.Flash.onMessage', GS.XD._origin);
+                document.XdComm.init('GS.XD.Flash.onMessage',GS.XD.Flash._canvasChannel);
             });
+	    GS.XD.PostMaster = this;
         },
         onMessage: function (a) {
             GS.XD.recv(decodeURIComponent(a));
-        }
+        },
+	send: function(msg,dmn){
+	    document.XdComm.send(msg, GS.XD.Flash._pageChannel);
+	},
+	getChannel: function(relation) {
+	    if (relation=='parent.parent')
+		return GS.XD.Flash._pageChannel;
+	    return GS.XD.Flash._canvasChannel;
+	}
     },
     Fragment: {
         _magic: 'gs_xd_fragment',
         checkAndDispatch: function () {
-            var b = window.location.toString(),
-                a = b.substr(b.indexOf('#') + 1),
-                c = b.indexOf(GS.XD.Fragment._magic);
-            if (c > 0) {
+            var loc = window.location.toString(),
+                hash = loc.substr(loc.indexOf('#') + 1),
+                pos = loc.indexOf(GS.XD.Fragment._magic);
+            if (pos > 0) {
                 GS.init = GS.getLoginStatus = GS.api = function () {};
                 document.documentElement.style.display = 'none';
-                GS.XD.resolveRelation(GS.QS.decode(a).relation).GS.XD.recv(a);
+                GS.XD.resolveRelation(GS.QS.decode(hash).relation).GS.XD.recv(hash);
             }
         }
-    }
-});
-GS.XD.Fragment.checkAndDispatch();
-GS.provide('Arbiter', {
-    inform: function (c, e, f, b) {
-        if (GS.Canvas.isTabIframe()) {
-            var d = GS.JSON.stringify({
-                method: c,
-                params: e
-            });
-            if (window.postMessage) {
-                GS.XD.resolveRelation(f || 'parent').postMessage(d, '*');
-                return;
-            } else
-            try {
-                window.opener.postMessage(d);
-                return;
-            } catch (a) {}
-        }
-		var key = !f || f=="parent.parent" ? "lstatic" : "staticgs" ;
-		var dmn = GS.getDomain(key);
-		if (location.protocol=='https')
-			dmn = dmn.replace('http://','https://');
-        var h = (dmn+ 'connect/canvas_proxy.htm#' + GS.QS.encode({
-            method: c,
-            params: GS.JSON.stringify(e || {}),
-            relation: f
-        }));
-        var g = GS.Content.appendHidden('');
-        GS.Content.insertIframe({
-            url: h,
-            root: g,
-            width: 1,
-            height: 1,
-            onload: function () {
-                setTimeout(function () {
-                    g.parentNode.removeChild(g);
-                }, 10);
-            }
+    },
+    inform: function (method, params, relation) {
+	var key = relation=="parent.parent" ? "lstatic" : "staticgs" ;
+	if (!relation)
+	    relation = "parent.parent";
+	var dmn = GS.getDomain(key);
+	if (location.protocol=='https')
+		dmn = dmn.replace('http://','https://');
+	params.from = GS.XD._origin;
+	var msg = GS.QS.encode({
+            method: method,
+            params: GS.JSON.stringify(params || {}),
+            relation: relation,
+	    transport: GS.XD._transport,
+	    origin: GS.getDomain('apps') 
         });
+        GS.XD.PostMaster.send(msg,dmn);
     }
 });
 GS.provide('Canvas', {
@@ -766,7 +818,7 @@ GS.provide('Canvas', {
             if (GS.Canvas._lastSize[b.frame].width == b.width && (b.height <= a && (a - b.height <= 16))) return false;
         }
         GS.Canvas._lastSize[b.frame] = b;
-        GS.Arbiter.inform('setSize', b);
+        GS.XD.inform('setSize', b);
         return true;
     },
     setAutoResize: function (b, a) {
@@ -781,9 +833,6 @@ GS.provide('Canvas', {
             window.clearInterval(GS.Canvas._timer);
             GS.Canvas._timer = null;
         }
-    },
-    isTabIframe: function () {
-        return (window.name.indexOf('app_runner_') === 0);
     },
     _computeContentSize: function () {
         var a = document.body,
@@ -960,6 +1009,9 @@ GS.provide('Dom', {
         }
         return GS.Dom._browserType;
     },
+    isIE: function() {
+		return GS.Dom.getBrowserType() == 'ie';
+    },
     getViewportInfo: function () {
         var a = (document.documentElement && document.compatMode == 'CSS1Compat') ? document.documentElement : document.body;
         return {
@@ -1022,7 +1074,7 @@ GS.provide('Dialog', {
             }));
         }
         if (!a) a = function () {};
-        var b = GS.$('gs_dialog_loader_close');
+        var b = GS.$id('gs_dialog_loader_close');
         GS.Dom.removeCss(b, 'gs_hidden');
         b.onclick = function () {
             GS.Dialog._hideLoader();
@@ -1033,15 +1085,18 @@ GS.provide('Dialog', {
     _hideLoader: function () {
         if (GS.Dialog._loaderEl && GS.Dialog._loaderEl == GS.Dialog._active) GS.Dialog._loaderEl.style.top = '-10000px';
     },
-    _makeActive: function (b) {
+    _makeActive: function (b,config) {
         GS.Dialog._lowerActive();
-        var a = {
-            width: parseInt(b.offsetWidth, 10),
-            height: parseInt(b.offsetHeight, 10)
+	var ie = GS.Dom.isIE(),
+         a = {
+            width: parseInt(b.offsetWidth, 10) + (ie ? 2*GSConstants.sizes.borderSize: 0),
+            height: parseInt(b.offsetHeight, 10) + (ie ? 2*GSConstants.sizes.borderSize: 0)
         },
+	h = config && config.height ? parseInt(config.height) + 2*GSConstants.sizes.borderSize : a.height,
+	w = config && config.width ? parseInt(config.width) + 2*GSConstants.sizes.borderSize : a.width,
             e = GS.Dom.getViewportInfo(),
-            c = (e.scrollLeft + (e.width - a.width) / 2),
-            d = (e.scrollTop + (e.height - a.height) / 2.5);
+            c = (e.scrollLeft + (e.width - w) / 2),
+            d = (e.scrollTop + (e.height - h) / 2.5);
         b.style.left = (c > 0 ? c : 0) + 'px';
         b.style.top = (d > 0 ? d : 0) + 'px';
         GS.Dialog._active = b;
@@ -1097,16 +1152,15 @@ GS.provide('Dialog', {
         c.className = 'gs_dialog_content';
         d.appendChild(c);
         GS.Content.append(d);
-        if (config.visible)
-        	GS.Dialog.show(d);
+        	GS.Dialog.show(d,config);
         return c;
     },
-    show: function (a) {
+    show: function (a,config) {
         a = GS.Dialog._findRoot(a);
         if (a) {
             GS.Dialog._removeStacked(a);
             GS.Dialog._hideLoader();
-            GS.Dialog._makeActive(a);
+            GS.Dialog._makeActive(a,config);
             GS.Dialog._stack.push(a);
         }
     },
@@ -1160,8 +1214,8 @@ GS.provide('UIServer', {
         var method = config.method.toLowerCase(),
             f = GS.UIServer.Methods[method] || {
                 size: {
-                    width: 575,
-                    height: 240
+                    width: (GSConstants.sizes[method] && GSConstants.sizes[method].width ? GSConstants.sizes[method].width : 575),
+                    height: (GSConstants.sizes[method] && GSConstants.sizes[method].height ? GSConstants.sizes[method].height : 240)
                 }
             },
             guid = GS.guid(),
@@ -1170,7 +1224,6 @@ GS.provide('UIServer', {
             api_key: GS._apiKey,
             app_id: GS._apiKey,
             locale: GS._locale,
-            sdk: 'joey',
 	    	graph: GSConstants._graph,
 	    	gsuser: GSConstants.getParam('gsuser',''),
             access_token: d && GS._session && GS._session.access_token || undefined
@@ -1178,7 +1231,6 @@ GS.provide('UIServer', {
         config.display = GS.UIServer.getDisplayMode(f, config);
         if (!f.url) {
             f.url = 'dialog/' + method;
-            if (!GS.Canvas.isTabIframe()) delete config.method;
         }
         var a = {
             cb: b,
@@ -1205,7 +1257,6 @@ GS.provide('UIServer', {
     },
     getDisplayMode: function (a, b) {
         if (b.display === 'hidden') return 'hidden';
-        if (GS.Canvas.isTabIframe() && b.display !== 'popup') return 'async';
         if (!GS._session && b.display == 'dialog' && !a.loggedOutIframe) {
             GS.log('"dialog" mode can only be used when the user is connected.');
             return 'popup';
@@ -1246,14 +1297,19 @@ GS.provide('UIServer', {
     },
     iframe: function (a) {
         a.className = 'GS_UI_Dialog';
-        a.root = GS.Dialog.create({
+	var cfg = {
             onClose: function () {
                 GS.UIServer._triggerDefault(a.id);
             },
-            loader: true,
-            loaderWidth: a.size.width,
+            loader: false,
+            width: a.size.width,
+	    loaderWidth: a.size.width,
             closeIcon: true
-        });
+        };
+	if (a.size.height) {
+		cfg.height = a.size.height;
+	}
+        a.root = GS.Dialog.create(cfg);
         GS.Dom.addCss(a.root, 'gs_dialog_iframe');
         GS.UIServer._insertIframe(a);
     },
@@ -1261,7 +1317,7 @@ GS.provide('UIServer', {
         a.frame = window.name;
         delete a.url;
         delete a.size;
-        GS.Arbiter.inform('showDialog', a);
+        GS.XD.inform('showDialog', a);
     },
     _insertIframe: function (b) {
         GS.UIServer._active[b.id] = false;
@@ -1326,8 +1382,8 @@ GS.provide('UIServer', {
             if (c.type == 'resize') {
                 if (c.height) d.style.height = c.height + 'px';
                 if (c.width) d.style.width = c.width + 'px';
-                GS.Arbiter.inform('resize.ack', {}, 'parent.frames[' + d.name + ']',location.protocol=='https');
-                GS.Dialog.show(d);
+                GS.XD.inform('resize.ack', {}, 'parent.frames[' + d.name + ']',location.protocol=='https');
+                GS.Dialog.show(d,c);
             }
         }, relation, true);
     },
@@ -1564,7 +1620,7 @@ GS.provide('', {
         b = b || {};
         GS.ui(GS.copy({
             display: 'popup',
-            method: 'stream.publish',
+            method: 'feed',
             preview: 1
         }, b || {}), a);
     },
@@ -2111,26 +2167,42 @@ window.setTimeout(function () {
 GS.provide('UIServer.Methods', {
     'pay.prompt': {
         transform: function (a) {
-            var b = GS.XD.handler(function (c) {
-                a.cb(GS.JSON.parse(c.response));
-            }, 'parent.frames[' + (window.name || 'iframe_canvas') + ']');
+            var b = GS.XD.handler(
+		function (c) {
+		    a.cb(GS.JSON.parse(c.response));
+		},
+		'parent.frames[' + (window.name || 'iframe_canvas') + ']');
             a.params.channel = b;
-            GS.Arbiter.inform('Pay.Prompt', a.params);
+            GS.XD.inform('Pay.Prompt', a.params);
             return false;
         }
-    }
-});
-GS.provide('UIServer.Methods', {
-    pay: {
+    },
+    'payuiserver': {
         transform: function (a) {
             var b = GS.XD.handler(function (c) {
                 a.cb(GS.JSON.parse(c.response));
             }, 'parent.frames[' + (window.name || 'iframe_canvas') + ']');
             a.params.channel = b;
             a.params.uiserver = true;
-            GS.Arbiter.inform('Pay.Prompt', a.params);
+            GS.XD.inform('Pay.Prompt', a.params);
             return false;
         }
+    },
+    'pay': {
+	transform:function(config){
+	    config.params.channel = GS.XD.handler(function (c) {
+                config.cb(GS.JSON.parse(c.response));
+            }, 'parent.parent');
+	    config.params.origin=GSConstants.getParam('gsapps','http://apps.gamestamper.com');
+		if (config.cb) {
+		GS.XD.subscribe(config.id,function(params){
+		    config.cb.call(window,params);
+		});
+	    }         
+	    config.params.cb = config.id;
+	    GS.XD.inform('Pay.Request', config.params);
+            return false;
+	}
     }
 });
 GS.Class('XGSML.Element', function (a) {
@@ -2288,7 +2360,6 @@ GS.subclass('XGSML.IframeWidget', 'XGSML.Element', null, {
         return GS.copy({
             api_key: GS._apiKey,
             locale: GS._locale,
-            sdk: 'joey',
             session_key: GS._session && GS._session.session_key,
             ref: this.getAttribute('ref')
         }, this.getUrlBits().params);
@@ -2558,6 +2629,10 @@ GS.subclass('XGSML.ConnectBar', 'XGSML.Element', null, {
     _notDisplayed: false,
     _container: null,
     _animationSpeed: 0,
+    imgs: {
+        buttonUrl: "rsrc/png/yY-r-h_Y6u1wrZPW.png",
+        missingProfileUrl: "rsrc/gif/yo-r-UlIqmHJn-SK.gif"
+    },
     process: function () {
         GS.getLoginStatus(this.bind(function (a) {
             GS.Event.monitor('auth.statusChange', this.bind(function () {
@@ -3409,6 +3484,16 @@ GS.subclass('XGSML.Name', 'XGSML.Element', null, {
     }
 });
 GS.subclass('XGSML.ProfilePic', 'XGSML.Element', null, {
+    _defPicMap: {
+        pic: "rsrc/jpg/yh-r-C5yt7Cqf3zU.jpg",
+        pic_big: "rsrc/gif/yL-r-HsTZSDw4avx.gif",
+        pic_big_with_logo: "rsrc/gif/y5-r-SRDCaeCL7hM.gif",
+        pic_small: "rsrc/jpg/yi-r-odA9sNLrE86.jpg",
+        pic_small_with_logo: "rsrc/gif/yD-r-k1xiRXKnlGd.gif",
+        pic_square: "rsrc/gif/yo-r-UlIqmHJn-SK.gif",
+        pic_square_with_logo: "rsrc/gif/yX-r-9dYJBPDHXwZ.gif",
+        pic_with_logo: "rsrc/gif/yu-r-fPPR9f2FJ3t.gif"
+    },
     process: function () {
         var d = this.getAttribute('size', 'thumb'),
             b = GS.XGSML.ProfilePic._sizeToPicFieldMap[d],
@@ -3524,7 +3609,7 @@ GS.subclass('XGSML.Registration', 'XGSML.IframeWidget', null, {
         if (this._attr.onvalidate) this.subscribe('xd.validate', this.bind(function (b) {
             var d = GS.JSON.parse(b.value);
             var a = this.bind(function (e) {
-                GS.Arbiter.inform('Registration.Validation', {
+                GS.XD.inform('Registration.Validation', {
                     errors: e,
                     id: b.id
                 }, 'parent.frames["' + this.getIframeNode().name + '"]');
@@ -3859,7 +3944,6 @@ GS.subclass('XGSML.SocialBar', 'XGSML.EdgeWidget', function (a) {
             channel: this.getChannelUrl(),
             api_key: GS._apiKey,
             locale: GS._locale,
-            sdk: 'joey',
             session_key: GS._session && GS._session.session_key
         });
     },
@@ -3959,48 +4043,6 @@ GS.subclass('XGSML.SocialBar', 'XGSML.EdgeWidget', function (a) {
 });
 void(0);
 
-
-GS.provide("", {
-    "_domain": {
-        "api": GSConstants.ensureSlash(GSConstants._ps+":\/\/api."+GSConstants._baseDomain),
-        "api_read": GSConstants.ensureSlash(GSConstants._ps+":\/\/api-read."+GSConstants._baseDomain),
-        "cdn": GSConstants.ensureSlash(GSConstants._baseCDDomainAndProto),
-        "graph": GSConstants.ensureSlash(GSConstants._graph),
-        "https_cdn": GSConstants.ensureSlash(GSConstants._baseCDDomainAndProtoSsl),
-        "https_staticgs": GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProtoSsl),
-        "https_www": GSConstants.ensureSlash(GSConstants._ps+":\/\/www."+GSConstants._baseDomain),
-        "staticgs": GSConstants.ensureSlash(GSConstants._baseStaticDomainAndProto),
-        "www": GSConstants.ensureSlash("http:\/\/www."+GSConstants._baseDomain),
-	"def_www": GSConstants.ensureSlash(window.location.protocol + "\/\/www."+GSConstants._defaultDomain),
-	"lstatic":GSConstants.ensureSlash(GSConstants._lstatic)
-    },
-    "_locale": "en_US",
-    "_localeIsRtl": false
-}, true);
-GS.provide("Flash", {
-    "_minVersions": [
-        [10, 0, 22, 87]
-    ],
-    "_swfPath":  GSConstants._swf
-}, true);
-GS.provide("XGSML.ConnectBar", {
-    "imgs": {
-        "buttonUrl": "rsrc\/png\/yY-r-h_Y6u1wrZPW.png",
-        "missingProfileUrl": "rsrc\/gif\/yo-r-UlIqmHJn-SK.gif"
-    }
-}, true);
-GS.provide("XGSML.ProfilePic", {
-    "_defPicMap": {
-        "pic": "rsrc\/jpg\/yh-r-C5yt7Cqf3zU.jpg",
-        "pic_big": "rsrc\/gif\/yL-r-HsTZSDw4avx.gif",
-        "pic_big_with_logo": "rsrc\/gif\/y5-r-SRDCaeCL7hM.gif",
-        "pic_small": "rsrc\/jpg\/yi-r-odA9sNLrE86.jpg",
-        "pic_small_with_logo": "rsrc\/gif\/yD-r-k1xiRXKnlGd.gif",
-        "pic_square": "rsrc\/gif\/yo-r-UlIqmHJn-SK.gif",
-        "pic_square_with_logo": "rsrc\/gif\/yX-r-9dYJBPDHXwZ.gif",
-        "pic_with_logo": "rsrc\/gif\/yu-r-fPPR9f2FJ3t.gif"
-    }
-}, true);
 if (GS.Dom && GS.Dom.addCssRules) {
-    GS.Dom.addCssRules(".gs_progress_title{display:none}\n.gs_hidden{position:absolute;top:-10000px;z-index:10001}\n.gs_reset{background:none;border-spacing:0;border:0;color:#000;cursor:auto;direction:ltr;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;font-size:11px;font-style:normal;font-variant:normal;font-weight:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal}\n.gs_link img{border:none}\n.gs_dialog{position:absolute;top:-10000px;z-index:10001}\n.gs_dialog_advanced{background:rgba(82, 82, 82, .7);padding:10px;-moz-border-radius:8px;-webkit-border-radius:8px}\n.gs_dialog_content{background:#fff;color:#333}\n.gs_dialog_close_icon{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 0 transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif);cursor:pointer;display:block;height:15px;position:absolute;right:18px;top:17px;width:15px;top:8px\\9;right:7px\\9}\n.gs_dialog_close_icon:hover{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -15px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_close_icon:active{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -30px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_loader{background-color:#f2f2f2;border:1px solid #606060;font-size:24px;padding:20px}\n.gs_dialog_top_left,\n.gs_dialog_top_right,\n.gs_dialog_bottom_left,\n.gs_dialog_bottom_right{height:10px;width:10px;overflow:hidden;position:absolute}\n.gs_dialog_top_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 0;left:-10px;top:-10px}\n.gs_dialog_top_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -10px;right:-10px;top:-10px}\n.gs_dialog_bottom_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -20px;bottom:-10px;left:-10px}\n.gs_dialog_bottom_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -30px;right:-10px;bottom:-10px}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right,\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{position:absolute;background:#525252;filter:alpha(opacity=70);opacity:.7}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right{width:10px;height:100\u0025}\n.gs_dialog_vert_left{margin-left:-10px}\n.gs_dialog_vert_right{right:0;margin-right:-10px}\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{width:100\u0025;height:10px}\n.gs_dialog_horiz_top{margin-top:-10px}\n.gs_dialog_horiz_bottom{bottom:0;margin-bottom:-10px}\n.gs_dialog_iframe{line-height:0}\n.gs_dialog_content .dialog_title{background:#6d84b4;border:1px solid #3b5998;color:#fff;font-size:14px;font-weight:bold;margin:0}\n.gs_dialog_content .dialog_title > span{float:left;padding:5px 0 7px 26px}\n.gs_dialog_content .dialog_content{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat 50\u0025 50\u0025;border:1px solid #555;border-bottom:0;border-top:0;height:150px}\n.gs_dialog_content .dialog_footer{background:#f2f2f2;border:1px solid #555;border-top-color:#ccc;height:40px}\n#gs_dialog_loader_close{float:right}\n.fb_iframe_widget{position:relative;display:-moz-inline-block;display:inline-block}\n.fb_iframe_widget iframe{position:relative;vertical-align:text-bottom}\n.fb_iframe_widget span{position:relative}\n.fb_hide_iframes iframe{position:relative;left:-10000px}\n.fb_iframe_widget_loader{position:relative;display:inline-block}\n.fb_iframe_widget_loader iframe{min-height:32px;z-index:2;zoom:1}\n.fb_iframe_widget_loader .GS_Loader{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat;height:32px;width:32px;margin-left:-16px;position:absolute;left:50\u0025;z-index:4}\n.gs_button_simple,\n.gs_button_simple_rtl{background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zH-r-eIpbnVKI9lR.png);background-repeat:no-repeat;cursor:pointer;outline:none;text-decoration:none}\n.gs_button_simple_rtl{background-position:right 0}\n.gs_button_simple .gs_button_text{margin:0 0 0 20px;padding-bottom:1px}\n.gs_button_simple_rtl .gs_button_text{margin:0 10px 0 0}\na.gs_button_simple:hover .gs_button_text,\na.gs_button_simple_rtl:hover .gs_button_text,\n.gs_button_simple:hover .gs_button_text,\n.gs_button_simple_rtl:hover .gs_button_text{text-decoration:underline}\n.gs_button,\n.gs_button_rtl{background:#29447e url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);background-repeat:no-repeat;cursor:pointer;display:inline-block;padding:0 0 0 1px;text-decoration:none;outline:none}\n.gs_button .gs_button_text,\n.gs_button_rtl .gs_button_text{background:#5f78ab url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);border-top:solid 1px #879ac0;border-bottom:solid 1px #1a356e;color:#fff;display:block;font-family:\"lucida grande\",tahoma,verdana,arial,sans-serif;font-weight:bold;padding:2px 6px 3px 6px;margin:1px 1px 0 21px;text-shadow:none}\na.gs_button,\na.gs_button_rtl,\n.gs_button,\n.gs_button_rtl{text-decoration:none}\na.gs_button:active .gs_button_text,\na.gs_button_rtl:active .gs_button_text,\n.gs_button:active .gs_button_text,\n.gs_button_rtl:active .gs_button_text{border-bottom:solid 1px #29447e;border-top:solid 1px #45619d;background:#4f6aa3;text-shadow:none}\n.gs_button_xlarge,\n.gs_button_xlarge_rtl{background-position:left -60px;font-size:24px;line-height:30px}\n.gs_button_xlarge .gs_button_text{padding:3px 8px 3px 12px;margin-left:38px}\na.gs_button_xlarge:active{background-position:left -99px}\n.gs_button_xlarge_rtl{background-position:right -268px}\n.gs_button_xlarge_rtl .gs_button_text{padding:3px 8px 3px 12px;margin-right:39px}\na.gs_button_xlarge_rtl:active{background-position:right -307px}\n.gs_button_large,\n.gs_button_large_rtl{background-position:left -138px;font-size:13px;line-height:16px}\n.gs_button_large .gs_button_text{margin-left:24px;padding:2px 6px 4px 6px}\na.gs_button_large:active{background-position:left -163px}\n.gs_button_large_rtl{background-position:right -346px}\n.gs_button_large_rtl .gs_button_text{margin-right:25px}\na.gs_button_large_rtl:active{background-position:right -371px}\n.gs_button_medium,\n.gs_button_medium_rtl{background-position:left -188px;font-size:11px;line-height:14px}\na.gs_button_medium:active{background-position:left -210px}\n.gs_button_medium_rtl{background-position:right -396px}\n.gs_button_text_rtl,\n.gs_button_medium_rtl .gs_button_text{padding:2px 6px 3px 6px;margin-right:22px}\na.gs_button_medium_rtl:active{background-position:right -418px}\n.gs_button_small,\n.gs_button_small_rtl{background-position:left -232px;font-size:10px;line-height:10px}\n.gs_button_small .gs_button_text{padding:2px 6px 3px;margin-left:17px}\na.gs_button_small:active,\n.gs_button_small:active{background-position:left -250px}\n.gs_button_small_rtl{background-position:right -440px}\n.gs_button_small_rtl .gs_button_text{padding:2px 6px;margin-right:18px}\na.gs_button_small_rtl:active{background-position:right -458px}\n.gs_connect_bar_container div,\n.gs_connect_bar_container span,\n.gs_connect_bar_container a,\n.gs_connect_bar_container img,\n.gs_connect_bar_container strong{background:none;border-spacing:0;border:0;direction:ltr;font-style:normal;font-variant:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal;vertical-align:baseline}\n.gs_connect_bar_container{position:fixed;left:0 !important;right:0 !important;height:42px !important;padding:0 25px !important;margin:0 !important;vertical-align:middle !important;border-bottom:1px solid #333 !important;background:#3b5998 !important;z-index:99999999 !important;overflow:hidden !important}\n.gs_connect_bar_container_ie6{position:absolute;top:expression(document.compatMode==\"CSS1Compat\"? document.documentElement.scrollTop+\"px\":body.scrollTop+\"px\")}\n.gs_connect_bar{position:relative;margin:auto;height:100\u0025;width:100\u0025;padding:6px 0 0 0 !important;background:none;color:#fff !important;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif !important;font-size:13px !important;font-style:normal !important;font-variant:normal !important;font-weight:normal !important;letter-spacing:normal !important;line-height:1 !important;text-decoration:none !important;text-indent:0 !important;text-shadow:none !important;text-transform:none !important;white-space:normal !important;word-spacing:normal !important}\n.gs_connect_bar a:hover{color:#fff}\n.gs_connect_bar .gs_profile img{height:30px;width:30px;vertical-align:middle;margin:0 6px 5px 0}\n.gs_connect_bar div a,\n.gs_connect_bar span,\n.gs_connect_bar span a{color:#bac6da;font-size:11px;text-decoration:none}\n.gs_connect_bar .gs_buttons{float:right;margin-top:7px}\n.gs_edge_widget_with_comment{position:relative;*z-index:1000}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget{position:absolute}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_ltr{left:-4px}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_rtl{left:2px}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget{left:0}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget .GS_Loader{left:10\u0025}\n.gs_share_count_wrapper{position:relative;float:left}\n.gs_share_count{background:#b0b9ec none repeat scroll 0 0;color:#333;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;text-align:center}\n.gs_share_count_inner{background:#e8ebf2;display:block}\n.gs_share_count_right{margin-left:-1px;display:inline-block}\n.gs_share_count_right .gs_share_count_inner{border-top:solid 1px #e8ebf2;border-bottom:solid 1px #b0b9ec;margin:1px 1px 0 1px;font-size:10px;line-height:10px;padding:2px 6px 3px;font-weight:bold}\n.gs_share_count_top{display:block;letter-spacing:-1px;line-height:34px;margin-bottom:7px;font-size:22px;border:solid 1px #b0b9ec}\n.gs_share_count_nub_top{border:none;display:block;position:absolute;left:7px;top:35px;margin:0;padding:0;width:6px;height:7px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zU-r-bSOHtKbCGYI.png)}\n.gs_share_count_nub_right{border:none;display:inline-block;padding:0;width:5px;height:10px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zX-r-i_oIVTKMYsL.png);vertical-align:top;background-position:right 5px;z-index:10;left:2px;margin:0 2px 0 0;position:relative}\n.gs_share_no_count{display:none}\n.gs_share_size_Small .gs_share_count_right .gs_share_count_inner{font-size:10px}\n.gs_share_size_Medium .gs_share_count_right .gs_share_count_inner{font-size:11px;padding:2px 6px 3px;letter-spacing:-1px;line-height:14px}\n.gs_share_size_Large .gs_share_count_right .gs_share_count_inner{font-size:13px;line-height:16px;padding:2px 6px 4px;font-weight:normal;letter-spacing:-1px}\n.gs_share_count_hidden .gs_share_count_nub_top,\n.gs_share_count_hidden .gs_share_count_top,\n.gs_share_count_hidden .gs_share_count_nub_right,\n.gs_share_count_hidden .gs_share_count_right{visibility:hidden}\n#gs_social_bar_container{position:fixed;left:0;right:0;height:34px;padding:0 25px;z-index:999999999}\n.gs_social_bar_iframe{position:relative;float:right;opacity:0;-moz-opacity:0;filter:alpha(opacity=0)}\n.gs_social_bar_iframe_bottom_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop+document.documentElement.clientHeight-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n.gs_social_bar_iframe_top_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n .gs_dialog_content .dialog_title {background:url(https:\/\/s3.amazonaws.com\/static.gamescdn.com\/img\/bgSprite.png?1) repeat-x scroll 0 -124px #01A3C2; padding:10px; }.gs_dialog_content .dialog_title > span {background:url(http:\/\/static.gamescdn.com\/img\/favicon.png) no-repeat 0 50\u0025; padding:1px 0 1px 23px;} .gs_dialog_content .dialog_title, .gs_dialog_content .dialog_content {border:0;} .gs_dialog_content .dialog_footer { border-left-width:0; border-right-width:0;}", ["gs.css.base", "gs.css.dialog", "gs.css.iframewidget", "gs.css.button", "gs.css.connectbarwidget", "gs.css.edgecommentwidget", "gs.css.sendbuttonformwidget", "gs.css.sharebutton", "gs.css.socialbarwidget"]);
+    GS.Dom.addCssRules(".gs_progress_title{display:none}\n.gs_hidden{position:absolute;top:-10000px;z-index:10001}\n.gs_reset{background:none;border-spacing:0;border:0;color:#000;cursor:auto;direction:ltr;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;font-size:11px;font-style:normal;font-variant:normal;font-weight:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal}\n.gs_link img{border:none}\n.gs_dialog{position:absolute;top:-10000px;z-index:10001}\n.gs_dialog_advanced{background:rgba(82, 82, 82, .7);padding:"+(GSConstants.sizes.borderSize)+"px;-moz-border-radius:8px;-webkit-border-radius:8px}\n.gs_dialog_content{background:#fff;color:#333}\n.gs_dialog_close_icon{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 0 transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif);cursor:pointer;display:block;height:15px;position:absolute;right:18px;top:17px;width:15px;top:8px\\9;right:7px\\9}\n.gs_dialog_close_icon:hover{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -15px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_close_icon:active{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zq-r-IE9JII6Z1Ys.png) no-repeat scroll 0 -30px transparent;_background-image:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/zL-r-s816eWC-2sl.gif)}\n.gs_dialog_loader{background-color:#f2f2f2;border:1px solid #606060;font-size:24px;padding:20px}\n.gs_dialog_top_left,\n.gs_dialog_top_right,\n.gs_dialog_bottom_left,\n.gs_dialog_bottom_right{height:10px;width:10px;overflow:hidden;position:absolute}\n.gs_dialog_top_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 0;left:-10px;top:-10px}\n.gs_dialog_top_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -10px;right:-10px;top:-10px}\n.gs_dialog_bottom_left{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -20px;bottom:-10px;left:-10px}\n.gs_dialog_bottom_right{background:url(http:\/\/static.gamescdn.com\/rsrc\/png\/ze-r-8YeTNIlTZjm.png) no-repeat 0 -30px;right:-10px;bottom:-10px}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right,\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{position:absolute;background:#525252;filter:alpha(opacity=70);opacity:.7}\n.gs_dialog_vert_left,\n.gs_dialog_vert_right{width:10px;height:100\u0025}\n.gs_dialog_vert_left{margin-left:-10px}\n.gs_dialog_vert_right{right:0;margin-right:-10px}\n.gs_dialog_horiz_top,\n.gs_dialog_horiz_bottom{width:100\u0025;height:10px}\n.gs_dialog_horiz_top{margin-top:-10px}\n.gs_dialog_horiz_bottom{bottom:0;margin-bottom:-10px}\n.gs_dialog_iframe{line-height:0}\n.gs_dialog_content .dialog_title{background:#6d84b4;border:1px solid #3b5998;color:#fff;font-size:14px;font-weight:bold;margin:0}\n.gs_dialog_content .dialog_title > span{float:left;padding:5px 0 7px 26px}\n.gs_dialog_content .dialog_content{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat 50\u0025 50\u0025;border:1px solid #555;border-bottom:0;border-top:0;height:150px}\n.gs_dialog_content .dialog_footer{background:#f2f2f2;border:1px solid #555;border-top-color:#ccc;height:40px}\n#gs_dialog_loader_close{float:right}\n.fb_iframe_widget{position:relative;display:-moz-inline-block;display:inline-block}\n.fb_iframe_widget iframe{position:relative;vertical-align:text-bottom}\n.fb_iframe_widget span{position:relative}\n.fb_hide_iframes iframe{position:relative;left:-10000px}\n.fb_iframe_widget_loader{position:relative;display:inline-block}\n.fb_iframe_widget_loader iframe{min-height:32px;z-index:2;zoom:1}\n.fb_iframe_widget_loader .GS_Loader{background:url(http:\/\/static.gamescdn.com\/rsrc\/gif\/z9-r-jKEcVPZFk-2.gif) no-repeat;height:32px;width:32px;margin-left:-16px;position:absolute;left:50\u0025;z-index:4}\n.gs_button_simple,\n.gs_button_simple_rtl{background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zH-r-eIpbnVKI9lR.png);background-repeat:no-repeat;cursor:pointer;outline:none;text-decoration:none}\n.gs_button_simple_rtl{background-position:right 0}\n.gs_button_simple .gs_button_text{margin:0 0 0 20px;padding-bottom:1px}\n.gs_button_simple_rtl .gs_button_text{margin:0 10px 0 0}\na.gs_button_simple:hover .gs_button_text,\na.gs_button_simple_rtl:hover .gs_button_text,\n.gs_button_simple:hover .gs_button_text,\n.gs_button_simple_rtl:hover .gs_button_text{text-decoration:underline}\n.gs_button,\n.gs_button_rtl{background:#29447e url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);background-repeat:no-repeat;cursor:pointer;display:inline-block;padding:0 0 0 1px;text-decoration:none;outline:none}\n.gs_button .gs_button_text,\n.gs_button_rtl .gs_button_text{background:#5f78ab url(http:\/\/static.gamescdn.com\/rsrc\/png\/zL-r-FGFbc80dUKj.png);border-top:solid 1px #879ac0;border-bottom:solid 1px #1a356e;color:#fff;display:block;font-family:\"lucida grande\",tahoma,verdana,arial,sans-serif;font-weight:bold;padding:2px 6px 3px 6px;margin:1px 1px 0 21px;text-shadow:none}\na.gs_button,\na.gs_button_rtl,\n.gs_button,\n.gs_button_rtl{text-decoration:none}\na.gs_button:active .gs_button_text,\na.gs_button_rtl:active .gs_button_text,\n.gs_button:active .gs_button_text,\n.gs_button_rtl:active .gs_button_text{border-bottom:solid 1px #29447e;border-top:solid 1px #45619d;background:#4f6aa3;text-shadow:none}\n.gs_button_xlarge,\n.gs_button_xlarge_rtl{background-position:left -60px;font-size:24px;line-height:30px}\n.gs_button_xlarge .gs_button_text{padding:3px 8px 3px 12px;margin-left:38px}\na.gs_button_xlarge:active{background-position:left -99px}\n.gs_button_xlarge_rtl{background-position:right -268px}\n.gs_button_xlarge_rtl .gs_button_text{padding:3px 8px 3px 12px;margin-right:39px}\na.gs_button_xlarge_rtl:active{background-position:right -307px}\n.gs_button_large,\n.gs_button_large_rtl{background-position:left -138px;font-size:13px;line-height:16px}\n.gs_button_large .gs_button_text{margin-left:24px;padding:2px 6px 4px 6px}\na.gs_button_large:active{background-position:left -163px}\n.gs_button_large_rtl{background-position:right -346px}\n.gs_button_large_rtl .gs_button_text{margin-right:25px}\na.gs_button_large_rtl:active{background-position:right -371px}\n.gs_button_medium,\n.gs_button_medium_rtl{background-position:left -188px;font-size:11px;line-height:14px}\na.gs_button_medium:active{background-position:left -210px}\n.gs_button_medium_rtl{background-position:right -396px}\n.gs_button_text_rtl,\n.gs_button_medium_rtl .gs_button_text{padding:2px 6px 3px 6px;margin-right:22px}\na.gs_button_medium_rtl:active{background-position:right -418px}\n.gs_button_small,\n.gs_button_small_rtl{background-position:left -232px;font-size:10px;line-height:10px}\n.gs_button_small .gs_button_text{padding:2px 6px 3px;margin-left:17px}\na.gs_button_small:active,\n.gs_button_small:active{background-position:left -250px}\n.gs_button_small_rtl{background-position:right -440px}\n.gs_button_small_rtl .gs_button_text{padding:2px 6px;margin-right:18px}\na.gs_button_small_rtl:active{background-position:right -458px}\n.gs_connect_bar_container div,\n.gs_connect_bar_container span,\n.gs_connect_bar_container a,\n.gs_connect_bar_container img,\n.gs_connect_bar_container strong{background:none;border-spacing:0;border:0;direction:ltr;font-style:normal;font-variant:normal;letter-spacing:normal;line-height:1;margin:0;overflow:visible;padding:0;text-align:left;text-decoration:none;text-indent:0;text-shadow:none;text-transform:none;visibility:visible;white-space:normal;word-spacing:normal;vertical-align:baseline}\n.gs_connect_bar_container{position:fixed;left:0 !important;right:0 !important;height:42px !important;padding:0 25px !important;margin:0 !important;vertical-align:middle !important;border-bottom:1px solid #333 !important;background:#3b5998 !important;z-index:99999999 !important;overflow:hidden !important}\n.gs_connect_bar_container_ie6{position:absolute;top:expression(document.compatMode==\"CSS1Compat\"? document.documentElement.scrollTop+\"px\":body.scrollTop+\"px\")}\n.gs_connect_bar{position:relative;margin:auto;height:100\u0025;width:100\u0025;padding:6px 0 0 0 !important;background:none;color:#fff !important;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif !important;font-size:13px !important;font-style:normal !important;font-variant:normal !important;font-weight:normal !important;letter-spacing:normal !important;line-height:1 !important;text-decoration:none !important;text-indent:0 !important;text-shadow:none !important;text-transform:none !important;white-space:normal !important;word-spacing:normal !important}\n.gs_connect_bar a:hover{color:#fff}\n.gs_connect_bar .gs_profile img{height:30px;width:30px;vertical-align:middle;margin:0 6px 5px 0}\n.gs_connect_bar div a,\n.gs_connect_bar span,\n.gs_connect_bar span a{color:#bac6da;font-size:11px;text-decoration:none}\n.gs_connect_bar .gs_buttons{float:right;margin-top:7px}\n.gs_edge_widget_with_comment{position:relative;*z-index:1000}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget{position:absolute}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_ltr{left:-4px}\n.gs_edge_widget_with_comment span.gs_edge_comment_widget iframe.gs_rtl{left:2px}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget{left:0}\n.gs_edge_widget_with_comment span.gs_send_button_form_widget .GS_Loader{left:10\u0025}\n.gs_share_count_wrapper{position:relative;float:left}\n.gs_share_count{background:#b0b9ec none repeat scroll 0 0;color:#333;font-family:\"lucida grande\", tahoma, verdana, arial, sans-serif;text-align:center}\n.gs_share_count_inner{background:#e8ebf2;display:block}\n.gs_share_count_right{margin-left:-1px;display:inline-block}\n.gs_share_count_right .gs_share_count_inner{border-top:solid 1px #e8ebf2;border-bottom:solid 1px #b0b9ec;margin:1px 1px 0 1px;font-size:10px;line-height:10px;padding:2px 6px 3px;font-weight:bold}\n.gs_share_count_top{display:block;letter-spacing:-1px;line-height:34px;margin-bottom:7px;font-size:22px;border:solid 1px #b0b9ec}\n.gs_share_count_nub_top{border:none;display:block;position:absolute;left:7px;top:35px;margin:0;padding:0;width:6px;height:7px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zU-r-bSOHtKbCGYI.png)}\n.gs_share_count_nub_right{border:none;display:inline-block;padding:0;width:5px;height:10px;background-repeat:no-repeat;background-image:url(http:\/\/static.gamescdn.com\/rsrc\/png\/zX-r-i_oIVTKMYsL.png);vertical-align:top;background-position:right 5px;z-index:10;left:2px;margin:0 2px 0 0;position:relative}\n.gs_share_no_count{display:none}\n.gs_share_size_Small .gs_share_count_right .gs_share_count_inner{font-size:10px}\n.gs_share_size_Medium .gs_share_count_right .gs_share_count_inner{font-size:11px;padding:2px 6px 3px;letter-spacing:-1px;line-height:14px}\n.gs_share_size_Large .gs_share_count_right .gs_share_count_inner{font-size:13px;line-height:16px;padding:2px 6px 4px;font-weight:normal;letter-spacing:-1px}\n.gs_share_count_hidden .gs_share_count_nub_top,\n.gs_share_count_hidden .gs_share_count_top,\n.gs_share_count_hidden .gs_share_count_nub_right,\n.gs_share_count_hidden .gs_share_count_right{visibility:hidden}\n#gs_social_bar_container{position:fixed;left:0;right:0;height:34px;padding:0 25px;z-index:999999999}\n.gs_social_bar_iframe{position:relative;float:right;opacity:0;-moz-opacity:0;filter:alpha(opacity=0)}\n.gs_social_bar_iframe_bottom_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop+document.documentElement.clientHeight-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n.gs_social_bar_iframe_top_ie6{bottom:auto;top:expression(eval(document.documentElement.scrollTop-this.offsetHeight-(parseInt(this.currentStyle.marginTop,10)||0)-(parseInt(this.currentStyle.marginBottom,10)||0)))}\n .gs_dialog_content .dialog_title {background:url(https:\/\/s3.amazonaws.com\/static.gamescdn.com\/img\/bgSprite.png?1) repeat-x scroll 0 -124px #01A3C2; padding:10px; }.gs_dialog_content .dialog_title > span {background:url(http:\/\/static.gamescdn.com\/img\/favicon.png) no-repeat 0 50\u0025; padding:1px 0 1px 23px;} .gs_dialog_content .dialog_title, .gs_dialog_content .dialog_content {border:0;} .gs_dialog_content .dialog_footer { border-left-width:0; border-right-width:0;}", ["gs.css.base", "gs.css.dialog", "gs.css.iframewidget", "gs.css.button", "gs.css.connectbarwidget", "gs.css.edgecommentwidget", "gs.css.sendbuttonformwidget", "gs.css.sharebutton", "gs.css.socialbarwidget"]);
 }
