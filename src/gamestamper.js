@@ -20,7 +20,7 @@ if (!window.GSConstants) {
 		}
 	}
 	GSConstants._isDev = GSConstants.getParam('dev', false);
-	GSConstants._defaultDomain = "gamestamper.com";
+	GSConstants._defaultDomain = 'gamestamper.com';
 	GSConstants._baseDomain= GSConstants.getParam("gswww",GSConstants._defaultDomain).replace(/(http:\/\/|https:\/\/)/,"").replace(/www\./,"");
 	GSConstants._baseStaticDomainAndProto= "http://static.gamestamper.com/";
 	GSConstants._baseStaticDomainAndProtoSsl= "https://static.gamestamper.com/";
@@ -34,8 +34,8 @@ if (!window.GSConstants) {
 	GSConstants._lstatic= GSConstants.getParam('gsstatic',GSConstants._baseStaticDomainAndProto);
 	GSConstants.sizes = {
 	    borderSize:10,
-	    pay:{height:160,width:400},
 	    apprequests:{width:475,height:552},
+	    pay:{width:400,height:157,height2:316},
 	    feed:{height:266}
 	}
 }
@@ -2214,22 +2214,35 @@ GS.provide('UIServer.Methods', {
             return false;
         }
     },
-    'pay': {
-	transform:function(config){
-	    config.params.channel = GS.XD.handler(function (c) {
-                config.cb(GS.JSON.parse(c.response));
-            }, 'parent.parent');
-	    config.params.origin=GSConstants.getParam('gsapps','http://apps.gamestamper.com');
-		if (config.cb) {
-		GS.XD.subscribe(config.id,function(params){
-		    config.cb.call(window,params);
-		});
-	    }         
-	    config.params.cb = config.id;
-	    GS.XD.inform('Pay.Request', config.params);
-            return false;
+	'pay': {
+		transform:function(config){
+			var params = config.params,
+				paySizes = GSConstants.sizes.pay;
+		
+			// json-encode order_info
+			params.order_info = GS.JSON.stringify(params.order_info);
+			params.channel = GS.XD.handler(function (c) {
+					config.cb(GS.JSON.parse(c.response));
+				},
+				'parent.parent'
+			);
+			params.origin = GSConstants.getParam('gsapps','http://apps.gamestamper.com');
+			if (config.cb) {
+				GS.XD.subscribe(config.id,function(params){
+					config.cb.call(window,params);
+				});
+			}
+
+			params.cb = config.id;
+			params.width = paySizes.width;
+			// if it's  credits purchase, use height2 (taller)
+			params.height = paySizes['height' + (params.credits_purchase ? '2' : '')];
+
+			// inform the top page that we want the pay dialog
+			GS.XD.inform('Pay.Request', params);
+			return false;
+		}
 	}
-    }
 });
 GS.Class('XGSML.Element', function (a) {
     this.dom = a;
