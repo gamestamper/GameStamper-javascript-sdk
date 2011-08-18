@@ -119,7 +119,12 @@ if (!window.GS) window.GS = {
 	    return;
         if (GS._logging) if (window.Debug && window.Debug.writeln) {
             window.Debug.writeln(a);
-        }else if (window.console) window.console.log(Array.prototype.slice.call(arguments));
+        }else if (window.console) {
+	    	var ret = ['gssdk'];
+	    	for (var j=0,l=arguments.length;j<l;j++)
+				ret.push(arguments[j]);
+	    	window.console.log(Array.prototype.slice.call(ret));
+		}
         if (GS.Event) GS.Event.fire('gs.log', a);
     },
     $id: function (a) {
@@ -187,6 +192,25 @@ GS.provide('QS', {
             if (c && c[0]) d[a(c[0])] = a(c[1] || '');
         }
         return d;
+    }
+});
+GS.provide('URI',{
+    expression: /(((\w+:)\/\/)([^\/:]*)(:(\d+))?)?([^#?]*)(\?([^#]*))?(#(.*))?/,
+    parse: function (uri) {
+	var parts = uri.toString().match(GS.URI.expression),
+	    location = window.location,
+	    protocol = parts[3] || location.protocol,
+	    domain = parts[4] || location.hostname;
+	return {
+	    protocol: protocol,
+	    domain: domain,
+	    port: parts[6] || '',
+	    path: parts[7] || '',
+	    query_s: parts[9] || '',
+	    fragment: parts[11] || '',
+	    protocol_and_domain: protocol + '//' + domain,
+	    full_path: protocol + '//' + domain + parts[7]
+	};
     }
 });
 GS.provide('Content', {
@@ -643,9 +667,16 @@ GS.provide('XD', {
     _origin: null,
     _transport: null,
     _callbacks: {},
+    _domains: null,
     init: function (a) {
         if (GS.XD._origin) return;
 	var c = GSConstants.getParam('xd','postmessage');
+	if (GS.xdDomains) {
+	    GS.XD._domains = {};
+	    for (var j=0,l=GS.xdDomains.length;j<l;j++) {
+		GS.XD._domains[GS.xdDomains[j]]=1;
+	    }
+	}
         if (window.postMessage && c=="postmessage") {
             GS.XD._origin = (window.location.protocol + '//' + window.location.host + '/' + GS.guid());
             GS.XD.PostMessage.init();
@@ -710,7 +741,7 @@ GS.provide('XD', {
         });
     },
     subscribe:function(key,callback,forever){
-	GS.log('gssdk subscribing method'+(forever ? ' (persistent)':''),key,callback);
+	GS.log('subscribing method'+(forever ? ' (persistent)':''),key,callback);
 	GS.XD._callbacks[key] = GS.XD._callbacks[key] || [];
 	GS.XD._callbacks[key].push({
 		fn: callback,
@@ -724,7 +755,7 @@ GS.provide('XD', {
 	if (!callbacks) return;
 	for (var j=0,l=callbacks.length;j<l;j++) {
 	    var callback = callbacks[j];
-	    GS.log('gssdk recv',response.cb,GS.XD._callbacks,callback);
+	    GS.log('recv',response.cb,GS.XD._callbacks,callback);
 	    if (!callback) continue;
 	    if (!callback.forever) {
 		GS.log('deleting callback '+j+' for '+response.cb);
@@ -734,6 +765,9 @@ GS.provide('XD', {
 	}
 	
     },
+    domainAllowed: function(domain) {
+	return !GS.XD._domains || GS.XD._domains[domain] || document.domain == domain;
+    },
     PostMessage: {
         init: function () {
             var a = GS.XD.PostMessage.onMessage;
@@ -741,7 +775,13 @@ GS.provide('XD', {
             GS.XD.PostMaster = this;
         },
         onMessage: function (event) {
-            GS.XD.recv(event.data);
+	    if (GS.XD.domainAllowed(GS.URI.parse(event.origin).domain)) {
+		GS.log(event.origin,'allowed in',GS.XD._domains);
+		GS.XD.recv(event.data);
+	    }
+	    else {
+		GS.log(event.origin,'DENIED in',GS.XD._domains);
+	    }
         },
 	send: function(msg,dmn){
 	    var h = (dmn+ 'connect/xd_proxy.htm'+GS.XD._getXdProxyQuery()+'#' + msg),
@@ -2153,6 +2193,9 @@ GS.provide('', {
         });
         GS._apiKey = a.appId || a.apiKey;
         if (!a.logging && window.location.toString().indexOf('gs_debug=1') < 0) GS._logging = false;
+	if (a.xdDomains) {
+	    GS.xdDomains = a.xdDomains;
+	}
         GS.XD.init(a.channelUrl);
         if (GS._apiKey) {
             GS.Cookie.setEnabled(a.cookie);
