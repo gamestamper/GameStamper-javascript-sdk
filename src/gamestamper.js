@@ -239,9 +239,13 @@ GS.provide('Content', {
 		if (!c) if (!GS.Content._root) {
 			GS.Content._root = c = GS.$id('gs-root');
 			if (!c) {
-				GS.log('The "gs-root" div has not been created.');
+				var gsroot = document.createElement('div');
+				gsroot.id='gs-root';
+				document.body.appendChild(gsroot);
+				GS.Content._root = c = gsroot;
 				return;
-			} else c.className += ' gs_reset';
+			}
+			c.className += ' gs_reset';
 		}else c = GS.Content._root;
 		if (typeof a == 'string') {
 			var b = document.createElement('div');
@@ -802,15 +806,17 @@ GS.provide('XD', {
 	recv: function (response) {
 		if (typeof response == 'string') response = GS.QS.decode(response);
 		if (response.params && typeof response.params == 'string') response.params = GS.JSON.parse(response.params);
-		var callbacks = GS.XD._callbacks[response.cb] || GS.XD._callbacks[response.method];
+		var cb = response.cb || response.method,
+			callbacks = GS.XD._callbacks[cb];
+		delete response.cb;
 		if (!callbacks) return;
 		for (var j=0,l=callbacks.length;j<l;j++) {
 			var callback = callbacks[j];
-			GS.log('recv',response.cb,GS.XD._callbacks,callback);
+			GS.log('recv',cb,GS.XD._callbacks,callback);
 			if (!callback) continue;
 			if (!callback.forever) {
-				GS.log('deleting callback '+j+' for '+response.cb);
-				delete GS.XD._callbacks[response.cb][j];
+				GS.log('deleting callback '+j+' for '+cb);
+				delete GS.XD._callbacks[cb][j];
 			}
 			callback.fn(response);
 		}
