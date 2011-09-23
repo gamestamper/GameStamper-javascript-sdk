@@ -3097,7 +3097,7 @@ GS.provide('UIServer.Methods', {
 			params.cb = config.id;
 			params.width = paySizes.width;
 			// if it's  credits purchase, use height2 (taller)
-			params.height = paySizes['height' + (params.credits_purchase ? '2' : '')];
+			params.height = paySizes['height' + (params.credits_purchase || (params.dev_purchase_params && !params.dev_purchase_params.oscif) ? '2' : '')];
 
 			// inform the top page that we want the pay dialog
 			GS.XD.inform('Pay.Request', params);
