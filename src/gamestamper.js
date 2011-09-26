@@ -1054,7 +1054,7 @@ GS.provide('Canvas', {
 			y: b
 		});
 	},
-	setAutoResize: function (b, a) {
+	setAutoGrow: function (b, a) {
 		if (a === undefined && typeof b == "number") {
 			a = b;
 			b = true;
@@ -1112,6 +1112,10 @@ GS.provide('Canvas', {
 		};
 	}
 });
+
+// TODO : REMOVE ON 1/1/2012
+GS.Canvas.setAutoResize = GS.Canvas.setAutoGrow;
+
 GS.provide('Intl', {
 	_punctCharClass: ('[' + '.!?' + '\u3002' + '\uFF01' + '\uFF1F' + '\u0964' + '\u2026' + '\u0EAF' + '\u1801' + '\u0E2F' + '\uFF0E' + ']'),
 	_endsInPunct: function (a) {
