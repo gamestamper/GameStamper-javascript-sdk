@@ -46,7 +46,8 @@ if (!window.GSConstants) {
 		feed:{
 			height:266
 		}
-	}
+	};
+	GSConstants._fb = 'gs';
 }
 
 if (!window.GS) window.GS = {
@@ -184,6 +185,10 @@ GS.provide('Array', {
 				c.forEach(a);
 			} else for (var b = 0, e = c.length; b < e; b++) a(c[b], b, c);
 		} else for (var d in c) if (f || c.hasOwnProperty(d)) a(c[d], d, c);
+	},
+	toArray: function (b) {
+		for (var c = 0, a = [], d = b.length; c < d; c++) a[c] = b[c];
+		return a;
 	}
 });
 GS.provide('QS', {
@@ -327,7 +332,7 @@ GS.provide('Content', {
 });
 GS.provide('Flash', {
 	_minVersions: [
-	[10, 0, 22, 87]
+		[10, 0, 22, 87]
 	],
 	_swfPath: GSConstants._swf,
 	_callbacks: [],
@@ -713,7 +718,7 @@ GS.provide('XD', {
 	_origin: null,
 	_transport: null,
 	_callbacks: {},
-	_xdProxyUrl: 'connect/xd_proxy.php',
+	_xdProxyUrl: 'connect/xd_proxy.htm',
 	_openerTransport: null,
 	_openerOrigin: null,
 	_nonOpenerOrigin: null,
@@ -774,10 +779,19 @@ GS.provide('XD', {
 		}
 		return s+res;
 	},
-	handler: function (callback, relation, forever) {
+	handler: function (callback, relation, forever, guid, secure) {
 		if (window.location.toString().indexOf(GS.XD.Fragment._magic) > 0) return 'javascript:false;//';
-		var xdProxyUrl = GS.getDomain('cdn')+'connect/xd_proxy.htm'+GS.XD._getXdProxyQuery()+'#',
-		guid = GS.guid();
+		var xdProxyUrl = GS.getDomain((secure ? 'https_' : '') + 'cdn') +GS.XD._xdProxyUrl+GS.XD._getXdProxyQuery()+'#';
+		guid = guid || GS.guid();
+		relation = relation || 'opener';
+		if (GS.XD._openerTransport) if (f == 'opener') {
+			GS.XD._transport = GS.XD._openerTransport;
+			GS.XD._origin = GS.XD._openerOrigin;
+		} else {
+			GS.XD.PostMessage.init();
+			GS.XD._transport = 'postmessage';
+			GS.XD._origin = GS.XD._nonOpenerOrigin;
+		}
 		if (GS.XD._transport == 'fragment') {
 			xdProxyUrl = GS.XD.Fragment._channelUrl;
 			var d = xdProxyUrl.indexOf('#');
@@ -841,7 +855,7 @@ GS.provide('XD', {
 			}
 		},
 		send: function(msg,dmn){
-			var h = (dmn+ 'connect/xd_proxy.htm'+GS.XD._getXdProxyQuery()+'#' + msg),
+			var h = (dmn+ GS.XD._xdProxyUrl +GS.XD._getXdProxyQuery()+'#' + msg),
 			g = GS.Content.appendHidden('');
 			GS.Content.insertIframe({
 				url: h,
@@ -948,6 +962,9 @@ GS.provide('UA', {
 	android: function () {
 		return GS.UA._populate() || this._android;
 	},
+	iPad: function () {
+		return GS.UA._populate() || this._iPad;
+	},
 	nativeApp: function () {
 		return false;
 	},
@@ -958,6 +975,7 @@ GS.provide('UA', {
 		var a = /(?:MSIE.(\d+\.\d+))|(?:(?:Firefox|GranParadiso|Iceweasel).(\d+\.\d+))|(?:Opera(?:.+Version.|.)(\d+\.\d+))|(?:AppleWebKit.(\d+(?:\.\d+)?))/.exec(navigator.userAgent);
 		var c = /(Mac OS X)|(Windows)|(Linux)/.exec(navigator.userAgent);
 		var b = /\b(iPhone|iP[ao]d)/.exec(navigator.userAgent);
+		GS.UA._iPad = /\b(iPad)/.exec(navigator.userAgent);
 		GS.UA._android = navigator.userAgent.match(/Android/i);
 		GS.UA._mobile = b || GS.UA._android || navigator.userAgent.match(/Mobile/i);
 		if (a) {
@@ -993,8 +1011,8 @@ GS.provide('Canvas', {
 	getPageInfo: function (a) {
 		var d = 'top.frames[' + window.name + ']';
 		var b = GS.XD.handler(function (e) {
-			a && a(e);
-			for (var f in GS.Canvas._pageInfo) if (e[f]) GS.Canvas._pageInfo[f] = e[f];
+			for (var f in GS.Canvas._pageInfo) if (e[f]) GS.Canvas._pageInfo[f] = e[f] | 0;
+			a && a(GS.Canvas._pageInfo);
 		}, d, true);
 		var c = {
 			channelUrl: b,
@@ -1011,16 +1029,13 @@ GS.provide('Canvas', {
 			var c = false;
 			for (var e = 0; e < b.childNodes.length; e++) if (b.childNodes[e].nodeName == "PARAM" && b.childNodes[e].name == "wmode") if (b.childNodes[e].value != "window" && b.childNodes[e].value != "default") c = true;
 			if (!c) if (f.state == 'opened') {
-				b.style.old_visibility = b.style.visibility;
+				b._old_visibility = b.style.visibility;
 				b.style.visibility = 'hidden';
 			} else if (f.state == 'closed') {
-				b.style.visibility = b.style.old_visibility;
-				b.style.old_visibility = '';
+				b.style.visibility = b._old_visibility;
+				delete b._old_visibility;
 			}
 		}
-	},
-	_setHideFlashCallback: function (a) {
-		if (a) GS.Canvas._hideFlashCallback = a;
 	},
 	init: function () {
 		var b = GS.Dom.getViewportInfo();
@@ -1032,19 +1047,27 @@ GS.provide('Canvas', {
 			channelUrl: a
 		});
 	},
-	setSize: function (b) {
-		if (typeof b != "object") b = {};
-		b = b || {};
-		if (b.width == null || b.height == null) b = GS.copy(b, GS.Canvas._computeContentSize());
-		b = GS.copy(b, {
+	setSize: function (e) {
+		if (typeof e != "object") e = {};
+		var c = 0,
+			b = 0;
+		e = e || {};
+		if (e.width == null || e.height == null) {
+			e = GS.copy(e, GS.Canvas._computeContentSize());
+			c = 16;
+			b = 4;
+		}
+		e = GS.copy(e, {
 			frame: window.name || 'iframe_canvas'
 		});
-		if (GS.Canvas._lastSize[b.frame]) {
-			var a = GS.Canvas._lastSize[b.frame].height;
-			if (GS.Canvas._lastSize[b.frame].width == b.width && (b.height <= a && (Math.abs(a - b.height) <= 16))) return false;
+		if (GS.Canvas._lastSize[e.frame]) {
+			var d = GS.Canvas._lastSize[e.frame].height;
+			var a = e.height - d;
+			if (GS.Canvas._lastSize[e.frame].width == e.width && (a <= b && a >= -c)) return false;
+			//if (GS.Canvas._lastSize[e.frame].width == e.width && (e.height <= a && (Math.abs(a - e.height) <= 16))) return false;
 		}
-		GS.Canvas._lastSize[b.frame] = b;
-		GS.XD.inform('setSize', b);
+		GS.Canvas._lastSize[e.frame] = e;
+		GS.XD.inform('setSize', e);
 		return true;
 	},
 	scrollTo: function (a, b) {
@@ -1066,6 +1089,9 @@ GS.provide('Canvas', {
 			window.clearInterval(GS.Canvas._timer);
 			GS.Canvas._timer = null;
 		}
+	},
+	setAutoResize: function (b, a) {
+		return GS.Canvas.setAutoGrow(b, a);
 	},
 	setDoneLoading: function (a) {
 		GS.Canvas._passAppTtiMessage(a, 'RecordIframeAppTti');
@@ -1095,27 +1121,29 @@ GS.provide('Canvas', {
 	},
 	_computeContentSize: function () {
 		var a = document.body,
-		c = document.documentElement,
-		d = 0,
-		b = Math.max(Math.max(a.offsetHeight, a.scrollHeight) + a.offsetTop, Math.max(c.offsetHeight, c.scrollHeight) + c.offsetTop);
+		e = document.documentElement,
+		i = 0,
+		d = Math.max(a.offsetTop, 0),
+		h = Math.max(e.offsetTop, 0),
+		c = a.scrollHeight + d,
+		b = a.offsetHeight + d,
+		g = e.scrollHeight + h,
+		f = e.offsetHeight + h;
+		bottom = Math.max(c, b, g, f);
 		if (a.offsetWidth < a.scrollWidth) {
-			d = a.scrollWidth + a.offsetLeft;
-		} else GS.Array.forEach(a.childNodes, function (e) {
-			var f = e.offsetWidth + e.offsetLeft;
-			if (f > d) d = f;
-		});
-		if (c.clientLeft > 0) d += (c.clientLeft * 2);
-		if (c.clientTop > 0) b += (c.clientTop * 2);
+			i = a.scrollWidth + a.offsetLeft;
+		} else GS.Array.forEach(a.childNodes, function (j) {
+				var k = j.offsetWidth + j.offsetLeft;
+				if (k > i) i = k;
+			});
+		if (e.clientLeft > 0) i += (e.clientLeft * 2);
+		if (e.clientTop > 0) bottom += (e.clientTop * 2);
 		return {
-			height: b,
-			width: d
+			height: bottom,
+			width: i
 		};
 	}
 });
-
-// TODO : REMOVE ON 1/1/2012
-GS.Canvas.setAutoResize = GS.Canvas.setAutoGrow;
-
 GS.provide('Intl', {
 	_punctCharClass: ('[' + '.!?' + '\u3002' + '\uFF01' + '\uFF1F' + '\u0964' + '\u2026' + '\u0EAF' + '\u1801' + '\u0E2F' + '\uFF0E' + ']'),
 	_endsInPunct: function (a) {
@@ -1209,6 +1237,14 @@ GS.provide('Dom', {
 			b.className = b.className.replace(a, '');
 			GS.Dom.removeCss(b, a);
 		}
+	},
+	getByClass: function (b, c) {
+		c = c || document.body;
+		if (c.getElementsByClassName) return GS.Array.toArray(c.getElementsByClassName(b));
+		var a = c.getElementsByTagName('*'),
+		    d = [];
+		for (var e = 0, f = a.length; e < f; e++) if (this.containsCss(a[e], b)) d[d.length] = a[e];
+		return d;
 	},
 	getStyle: function (a, c) {
 		var d = false,
@@ -1389,14 +1425,23 @@ GS.Class('Obj', null, GS.copy({
 }, GS.EventProvider));
 GS.subclass('Dialog', 'Obj', function (a) {
 	this.id = a;
+	if (!GS.Dialog._dialogs) {
+		GS.Dialog._dialogs = {};
+		GS.Dialog._addOrientationHandler();
+	}
 	GS.Dialog._dialogs[a] = this;
 }, {});
 GS.provide('Dialog', {
-	_dialogs: {},
+	_dialogs: null,
 	_lastYOffset: 0,
 	_loaderEl: null,
+	_overlayEl: null,
 	_stack: [],
 	_active: null,
+	_popStateListenerOn: false,
+	_hideOnPopState: function (a) {
+		GS.Dialog.hide(GS.Dialog._stack.pop());
+	},
 	get: function (a) {
 		return GS.Dialog._dialogs[a];
 	},
@@ -1417,17 +1462,30 @@ GS.provide('Dialog', {
 	_createMobileLoader: function () {
 		var a = GS.UA.nativeApp() ? '' : ('<table>' + '  <tbody>' + '    <tr>' + '      <td class="header_left">' + '        <label class="touchable_button">' + '          <input type="submit" value="' + GS.Intl._tx("Cancel") + '"' + '            id="gs_dialog_loader_close"/>' + '        </label>' + '      </td>' + '      <td class="header_center">' + '        <div>' + GS.Intl._tx("Loading...") + '</div>' + '      </td>' + '      <td class="header_right">' + '      </td>' + '    </tr>' + '  </tbody>' + '</table>');
 		return GS.Dialog.create({
-			classes: 'loading',
+			classes: 'loading' + (GS.UA.iPad() ? ' centered' : ''),
 			content: ('<div class="dialog_header">' + a + '</div>')
 		});
 	},
 	_restoreBodyPosition: function () {
-		if (GS.UA.mobile()) {
+		if (!GS.UA.iPad()) {
 			var a = document.getElementsByTagName('body')[0];
 			GS.Dom.removeCss(a, 'gs_hidden');
 		}
 	},
+	_showIPadOverlay: function () {
+		if (!GS.UA.iPad()) return;
+		if (!GS.Dialog._overlayEl) {
+			GS.Dialog._overlayEl = document.createElement('div');
+			GS.Dialog._overlayEl.setAttribute('id', 'fb_dialog_ipad_overlay');
+			GS.Content.append(GS.Dialog._overlayEl, null);
+		}
+		GS.Dialog._overlayEl.className = '';
+	},
+	_hideIPadOverlay: function () {
+		if (GS.UA.iPad()) GS.Dialog._overlayEl.className = 'hidden';
+	},
 	showLoader: function (a, c) {
+		GS.Dialog._showIPadOverlay();
 		if (!GS.Dialog._loaderEl) GS.Dialog._loaderEl = GS.Dialog._findRoot(GS.UA.mobile() ? GS.Dialog._createMobileLoader() : GS.Dialog._createWWWLoader(c));
 		if (!a) a = function () {};
 		var b = GS.$id('gs_dialog_loader_close');
@@ -1435,6 +1493,7 @@ GS.provide('Dialog', {
 		b.onclick = function () {
 			GS.Dialog._hideLoader();
 			GS.Dialog._restoreBodyPosition();
+			GS.Dialog._hideIPadOverlay();
 			a();
 		};
 		GS.Dialog._makeActive(GS.Dialog._loaderEl);
@@ -1468,29 +1527,49 @@ GS.provide('Dialog', {
 			return b != a;
 		});
 	},
-	_centerActive: function (g) {
+	_centerActive: function (i, config) {
 		var b = GS.Dialog._active;
 		if (!b) return;
-		var i = GS.Dom.getViewportInfo();
-		var j = parseInt(b.offsetWidth, 10);
-		var c = parseInt(b.offsetHeight, 10);
-		var d = i.scrollLeft + (i.width - j) / 2;
-		var f = (i.height - c) / 2.5;
+		var ie = GS.Dom.isIE();
+		var k = GS.Dom.getViewportInfo();
+		k.height = config && config.height ? parseInt(config.height) + 2*GSConstants.sizes.borderSize : k.height;
+		k.width = config && config.width ? parseInt(config.width) + 2*GSConstants.sizes.borderSize : k.width;
+		var l = parseInt(b.offsetWidth, 10) + (ie ? 2*GSConstants.sizes.borderSize: 0),
+			c = parseInt(b.offsetHeight, 10) + (ie ? 2*GSConstants.sizes.borderSize: 0),
+			d = k.scrollLeft + (k.width - l) / 2,
+			f = (k.height - c) / 2.5;
 		if (d < f) f = d;
-		var e = i.height - c - f;
-		var h = g.scrollTop - g.offsetTop + (g.clientHeight - c) / 2;
-		if (h < f) {
-			h = f;
-		} else if (h > e) h = e;
-		h += i.scrollTop;
+		var e = k.height - c - f,
+			j = i.scrollTop - i.offsetTop + (i.clientHeight - c) / 2;
+		if (j < f) {
+			j = f;
+		} else if (j > e) j = e;
+		j += k.scrollTop;
 		if (GS.UA.mobile()) {
-			var a = document.getElementsByTagName('body')[0];
-			GS.Dom.addCss(a, 'gs_hidden');
-			h = 10000;
-			d = 10000;
+			var h = 100;
+			if (GS.UA.iPad()) {
+				h += (k.height - c) / 2;
+			} else {
+				var a = document.getElementsByTagName('body')[0];
+				GS.Dom.addCss(a, 'gs_hidden');
+				d = 10000;
+				j = 10000;
+			}
+			var g = GS.Dom.getByClass('fb_dialog_padding', b);
+			if (g.length) g[0].style.height = h + 'px';
 		}
 		b.style.left = (d > 0 ? d : 0) + 'px';
-		b.style.top = (h > 0 ? h : 0) + 'px';
+		b.style.top = (j > 0 ? j : 0) + 'px';
+	},
+	_handleOrientationChange: function () {
+		if (GS.UA.iPad()) {
+			GS.Dialog._centerActive(GS.Canvas.getPageInfo());
+		} else for (var a in GS.Dialog._dialogs) if (document.getElementById(a)) document.getElementById(a).style.width = GS.UIServer.getDefaultSize().width + 'px';
+	},
+	_addOrientationHandler: function () {
+		if (!GS.UA.mobile()) return;
+		var a = "onorientationchange" in window ? 'orientationchange' : 'resize';
+		GS.Event.listen(window, a, GS.Dialog._handleOrientationChange);
 	},
 	create: function (config) {
 		config = config || {};
@@ -1520,6 +1599,11 @@ GS.provide('Dialog', {
 		if (!isNaN(width)) d.style.width = width + 'px';
 		c.className = 'gs_dialog_content';
 		d.appendChild(c);
+		if (GS.UA.mobile()) {
+			var f = document.createElement('div');
+			f.className = 'fb_dialog_padding';
+			d.appendChild(f);
+		}
 		GS.Content.append(d);
 		if (config.visible) GS.Dialog.show(d,config);
 		return c;
@@ -1532,6 +1616,10 @@ GS.provide('Dialog', {
 			GS.Dialog._makeActive(b,config);
 			GS.Dialog._stack.push(b);
 			if ('fbCallID' in a) GS.Dialog.get(a.fbCallID).fire('iframe_show');
+			if (!GS.Event._popStateListenerOn) {
+				GS.Event.listen(window, 'popstate', GS.Dialog._hideOnPopState);
+				GS.Event._popStateListenerOn = true;
+			}
 		}
 	},
 	hide: function (a) {
@@ -1539,7 +1627,12 @@ GS.provide('Dialog', {
 		if (b == GS.Dialog._active) {
 			GS.Dialog._lowerActive();
 			GS.Dialog._restoreBodyPosition();
+			GS.Dialog._hideIPadOverlay();
 			if ('fbCallID' in a) GS.Dialog.get(a.fbCallID).fire('iframe_hide');
+			if (GS.Event._popStateListenerOn) {
+				GS.Event.unlisten(window, 'popstate', GS.Dialog._hideOnPopState);
+				GS.Event._popStateListenerOn = false;
+			}
 		}
 	},
 	remove: function (a) {
@@ -1551,12 +1644,20 @@ GS.provide('Dialog', {
 				GS.Dialog._hideLoader();
 				if (GS.Dialog._stack.length > 0) {
 					GS.Dialog.show(GS.Dialog._stack.pop());
-				} else GS.Dialog._lowerActive();
+				} else { 
+					GS.Dialog._lowerActive();
+					GS.Dialog._restoreBodyPosition();
+					GS.Dialog._hideIPadOverlay();
+				}
 			}
 			window.setTimeout(function () {
 				a.parentNode.removeChild(a);
 			}, 3000);
 		}
+	},
+	isActive: function (a) {
+		var b = GS.Dialog._findRoot(a);
+		return b && b === GS.Dialog._active;
 	}
 });
 GS.provide('', {
@@ -1694,12 +1795,19 @@ GS.provide('UIServer', {
 		i = typeof window.screenY != 'undefined' ? window.screenY : window.screenTop,
 		g = typeof window.outerWidth != 'undefined' ? window.outerWidth : document.documentElement.clientWidth,
 		f = typeof window.outerHeight != 'undefined' ? window.outerHeight : (document.documentElement.clientHeight - 22),
-		k = b.size.width,
-		d = b.size.height,
+		k = GS.UA.mobile() ? null : b.size.width,
+		d = GS.UA.mobile() ? null : b.size.height,
 		h = (a < 0) ? window.screen.width + a : a,
 		e = parseInt(h + ((g - k) / 2), 10),
 		j = parseInt(i + ((f - d) / 2.5), 10),
-		c = ('width=' + k + ',height=' + d + ',left=' + e + ',top=' + j + ',scrollbars=1');
+		c = [];
+		if (k !== null) c.push('width=' + k);
+		if (d !== null) c.push('height=' + d);
+		c.push('left=' + e);
+		c.push('top=' + j);
+		c.push('scrollbars=1');
+		if (b.name == 'permissions.request' || b.name == 'permissions.oauth') c.push('location=1,toolbar=0');
+		c = c.join(',');
 		if (b.name && (b.name == 'permissions.request' || b.name == 'permissions.oauth')) c += ',location=1,toolbar=0';
 		if (b.post) {
 			GS.UIServer.setLoadedNode(b,window.open('about:blank', b.id, c));
@@ -1713,7 +1821,10 @@ GS.provide('UIServer', {
 	},
 	setLoadedNode: function (a, b) {
 		GS.UIServer._loadedNodes[a.id] = b;
-		if (a.params && a.params.display !== 'popup') b.fbCallID = a.id;
+		if (a.params) b.fbCallID = a.id;
+	},
+	getLoadedNode: function (a) {
+		return GS.UIServer._loadedNodes[a.id];
 	},
 	hidden: function (a) {
 		a.className = 'GS_UI_Hidden';
@@ -1747,7 +1858,12 @@ GS.provide('UIServer', {
 		GS.XD.inform('showDialog', a);
 	},
 	getDefaultSize: function () {
-		if (GS.UA.mobile()) {
+		if (GS.UA.mobile()) if (GS.UA.iPad()) {
+				return {
+					width: 500,
+					height: 590
+				};
+		} else {
 			var a = window.innerWidth / window.innerHeight > 1.2;
 			return {
 				width: window.innerWidth,
@@ -1806,9 +1922,8 @@ GS.provide('UIServer', {
 		var c = GS.UIServer._loadedNodes[b];
 		if (a.height) c.style.height = a.height + 'px';
 		if (a.width) c.style.width = a.width + 'px';
-		GS.UIServer._addOrientationHandler(b);
 		GS.XD.inform('resize.ack', a || {}, 'parent.frames[' + c.name + ']', true);
-		GS.Dialog.show(c);
+		if (!GS.Dialog.isActive(c)) GS.Dialog.show(c);
 	},
 	_triggerDefault: function (a) {
 		GS.UIServer._xdRecv({
@@ -2037,24 +2152,31 @@ GS.provide('Auth', {
 		}, 1200000);
 		return d;
 	},
-	setAuthResponse: function (a, g) {
+	setAuthResponse: function (a, h) {
 		if (!GS._oauth) throw new Error('GS.Auth.setAuthResponse only compatible with OAuth2.');
+		var j = 0;
+		if (a) if (a.userID) {
+			j = a.userID;
+		} else if (a.signedRequest) {
+			var f = GS.Auth.parseSignedRequest(a.signedRequest);
+			if (f && f.user_id) j = f.user_id;
+		}
 		var d = !GS._userID && a,
 		e = GS._userID && !a,
-		c = a && GS._userID != a.userID,
+		c = a && GS._userID != j,
 		b = d || e || c,
-		h = g != GS._userStatus;
-		var f = {
+		i = h != GS._userStatus;
+		var g = {
 			authResponse: a,
-			status: g
+			status: h
 		};
 		GS._authResponse = a;
-		GS._userID = a && a.userID || 0;
-		GS._userStatus = g;
-		if (e || c) GS.Event.fire('auth.logout', f);
-		if (d || c) GS.Event.fire('auth.login', f);
-		if (b) GS.Event.fire('auth.authResponseChange', f);
-		if (h) GS.Event.fire('auth.statusChange', f);
+		GS._userID = j;
+		GS._userStatus = h;
+		if (e || c) GS.Event.fire('auth.logout', g);
+		if (d || c) GS.Event.fire('auth.login', g);
+		if (b) GS.Event.fire('auth.authResponseChange', g);
+		if (i) GS.Event.fire('auth.statusChange', g);
 		if (GS.Auth._refreshTimer) {
 			window.clearTimeout(GS.Auth._refreshTimer);
 			delete GS.Auth._refreshTimer;
@@ -2062,7 +2184,7 @@ GS.provide('Auth', {
 		if (GS.Auth._loadState && a) GS.Auth._refreshTimer = window.setTimeout(function () {
 			GS.getLoginStatus(null, true);
 		}, 1200000);
-		return f;
+		return g;
 	},
 	xdHandler: function (a, b, f, c, e, d) {
 		return GS.UIServer._xdNextHandler(GS.Auth.xdResponseWrapper(a, e, d), b, f, c);
@@ -2174,8 +2296,8 @@ GS.provide('Auth', {
 GS.provide('UIServer.Methods', {
 	'permissions.request': {
 		size: {
-			width: 627,
-			height: 326
+			width: (GS.UA.mobile() ? null : 640),
+			height: (GS.UA.mobile() ? null : 241)
 		},
 		transform: function (a) {
 			if (!GS._apiKey) {
@@ -2204,8 +2326,8 @@ GS.provide('UIServer.Methods', {
 	'permissions.oauth': {
 		url: 'dialog/oauth',
 		size: {
-			width: 627,
-			height: 326
+			width: (GS.UA.mobile() ? null : 627),
+			height: (GS.UA.mobile() ? null : 326)
 		},
 		transform: function (a) {
 			if (!GS._apiKey) {
@@ -2283,6 +2405,11 @@ GS.provide('UIServer.Methods', {
 		}
 	}
 });
+GS.provide('CanvasInsights', {
+	setDoneLoading: function (a) {
+		GS.Canvas.setDoneLoading(a);
+	}
+});
 GS.provide('Cookie', {
 	_domain: null,
 	_enabled: false,
@@ -2348,30 +2475,39 @@ GS.provide('Frictionless', {
 	},
 	init: function () {
 		GS.Frictionless._useFrictionless = true;
+		GS.getLoginStatus(function (a) {
+			if (a.status == 'connected') GS.Frictionless._updateRecipients();
+		});
 		GS.Event.subscribe('auth.login', function (a) {
 			if (a.session) GS.Frictionless._updateRecipients();
 		});
 	},
-	_processRequestResponse: function (a) {
-		return function (d) {
-			var c = d && typeof d.frictionless_value !== 'undefined';
-			var e = d && d.updated_frictionless;
-			if (GS.Frictionless._useFrictionless && (e || c)) {
-				GS.Frictionless._updateRecipients();
-				if (c) {
-					var b = [];
-					GS.Array.forEach(d.request_ids, function (f) {
-						b.push(f);
-					}, false);
-					d.request_ids = b;
+	_processRequestResponse: function (a, b) {
+		return function (e) {
+				var d = e && typeof e.frictionless_value !== 'undefined';
+				var f = e && e.updated_frictionless;
+				if (GS.Frictionless._useFrictionless && (f || d)) {
+					GS.Frictionless._updateRecipients();
+					if (d) {
+						var c = [];
+						GS.Array.forEach(e.request_ids, function (g) {
+								c.push(g);
+							}, false);
+						e.request_ids = c;
+					}
 				}
-			}
-			a && a(d);
-		};
-	},
+				if (e) {
+					if (!b && e.frictionless) GS.Dialog._hideLoader();
+					delete e.frictionless;
+				}
+				a && a(e);
+			};
+		},
 	isAllowed: function (c) {
 		if (!c) return false;
-		if (typeof c === 'number' || typeof c === 'string') return GS.Frictionless._allowedRecipients[c];
+		if (typeof c === 'number') return GS.Frictionless._allowedRecipients[c];
+		if (typeof c === 'string') c = c.split(',');
+		c = GS.Array.map(c, GS.String.trim);
 		var a = true;
 		var b = false;
 		GS.Array.forEach(c, function (d) {
@@ -2388,6 +2524,10 @@ GS.provide('', {
 			logging: true,
 			status: true
 		});
+		if (a.xfbml) {
+			GSConstants._fb = 'fb';
+			a.xgsml = a.xfbml;
+		}
 		GS._userID = 0;
 		GS._apiKey = a.appId || a.apiKey;
 		GS._oauth = a.oauth;
@@ -2395,7 +2535,7 @@ GS.provide('', {
 		GS.XD.init(a.channelUrl);
 		if (GS.UA.mobile() && GS.TemplateUI && a.useCachedDialogs !== false) {
 			GS.TemplateUI.init();
-			GS.Event.subscribe('auth.sessionChange', GS.TemplateData.update);
+			GS.Event.subscribe('auth.statusChange', GS.TemplateData.update);
 		}
 		if (a.reportTemplates) GS.reportTemplates = true;
 		if (a.frictionlessRequests) GS.Frictionless.init();
@@ -2415,10 +2555,7 @@ GS.provide('', {
 			}
 			if (a.status) GS.getLoginStatus();
 		}
-		if (GS._inCanvas) {
-			if (a.hideFlashCallback) GS.Canvas._setHideFlashCallback(a.hideFlashCallback);
-			GS.Canvas.init();
-		}
+		if (GS._inCanvas) GS.Canvas.init();
 		GS.Event.subscribe('xgsml.parse', function () {
 			GS.XGSML.IframeWidget.batchWidgetPipeRequests();
 		});
@@ -2434,33 +2571,33 @@ GS.provide('', {
 				});
 			} else GS.Dom.ready(GS.XGSML.parse);
 		}, 0);
-		if (GS.Canvas && GS.Canvas.EarlyFlush) GS.Canvas.EarlyFlush._maybeSample();
+		if (GS.Canvas && GS.Canvas.Prefetcher) GS.Canvas.Prefetcher._maybeSample();
 	}
 });
-GS.provide('Canvas.EarlyFlush', {
+GS.provide('Canvas.Prefetcher', {
 	_sampleRate: 0,
 	_appIdsBlacklist: [],
 	_links: [],
 	COLLECT_AUTOMATIC: 0,
 	COLLECT_MANUAL: 1,
 	_collectionMode: 0,
-	addResource: function (a) {
+	addStaticResource: function (a) {
 		if (!GS._inCanvas || !GS._apiKey) return;
-		GS.Canvas.EarlyFlush._links.push(a);
+		GS.Canvas.Prefetcher._links.push(a);
 	},
 	setCollectionMode: function (a) {
 		if (!GS._inCanvas || !GS._apiKey) return false;
-		if (a != GS.Canvas.EarlyFlush.COLLECT_AUTOMATIC && a != GS.Canvas.EarlyFlush.COLLECT_MANUAL) return false;
-		GS.Canvas.EarlyFlush._collectionMode = a;
+		if (a != GS.Canvas.Prefetcher.COLLECT_AUTOMATIC && a != GS.Canvas.Prefetcher.COLLECT_MANUAL) return false;
+		GS.Canvas.Prefetcher._collectionMode = a;
 	},
 	_maybeSample: function () {
-		if (!GS._inCanvas || !GS._apiKey || !GS.Canvas.EarlyFlush._sampleRate) return;
+		if (!GS._inCanvas || !GS._apiKey || !GS.Canvas.Prefetcher._sampleRate) return;
 		if (window.name.indexOf('_gs_https') > -1) return;
 		var a = Math.random();
-		if (a > 1 / GS.Canvas.EarlyFlush._sampleRate) return;
-		if (GS.Canvas.EarlyFlush._appIdsBlacklist == '*') return;
-		if (GS.Array.indexOf(GS.Canvas.EarlyFlush._appIdsBlacklist, parseInt(GS._apiKey, 10)) != -1) return;
-		window.setTimeout(GS.Canvas.EarlyFlush._sample, 30000);
+		if (a > 1 / GS.Canvas.Prefetcher._sampleRate) return;
+		if (GS.Canvas.Prefetcher._appIdsBlacklist == '*') return;
+		if (GS.Array.indexOf(GS.Canvas.Prefetcher._appIdsBlacklist, parseInt(GS._apiKey, 10)) != -1) return;
+		window.setTimeout(GS.Canvas.Prefetcher._sample, 30000);
 	},
 	_sample: function () {
 		var b = {
@@ -2468,16 +2605,24 @@ GS.provide('Canvas.EarlyFlush', {
 			link: 'href',
 			script: 'src'
 		};
-		if (GS.Canvas.EarlyFlush._collectionMode == GS.Canvas.EarlyFlush.COLLECT_AUTOMATIC) GS.Array.forEach(b, function (c, d) {
+		if (GS.Canvas.Prefetcher._collectionMode == GS.Canvas.Prefetcher.COLLECT_AUTOMATIC) GS.Array.forEach(b, function (c, d) {
 			GS.Array.forEach(window.document.getElementsByTagName(d), function (e) {
-				if (e[c]) GS.Canvas.EarlyFlush._links.push(e[c]);
+				if (e[c]) GS.Canvas.Prefetcher._links.push(e[c]);
 			});
 		});
-		var a = GS.JSON.stringify(GS.Canvas.EarlyFlush._links);
+		var a = GS.JSON.stringify(GS.Canvas.Prefetcher._links);
 		GS.api(GS._apiKey + '/staticresources', 'post', {
 			urls: a
 		});
-		GS.Canvas.EarlyFlush._links = [];
+		GS.Canvas.Prefetcher._links = [];
+	}
+});
+GS.provide('Canvas.EarlyFlush', {
+	addResource: function (a) {
+		return GS.Canvas.Prefetcher.addStaticResource(a);
+	},
+	setCollectionMode: function (a) {
+		return GS.Canvas.Prefetcher.setCollectionMode(a);
 	}
 });
 GS.provide('CanvasInsights', {
@@ -2540,6 +2685,20 @@ GS.provide('UIServer.Methods', {
 			return a;
 		}
 	},
+	apprequests: {
+		transform: function (a) {
+			a = GS.UIServer.MobileIframableMethod.transform(a);
+			a.params.frictionless = GS.Frictionless && GS.Frictionless._useFrictionless;
+			if (a.params.frictionless) {
+				a.hideLoader = GS.Frictionless.isAllowed(a.params.to);
+				a.cb = GS.Frictionless._processRequestResponse(a.cb, a.hideLoader);
+			}
+			return a;
+		},
+		getXdRelation: function (a) {
+			return GS.UIServer.MobileIframableMethod.getXdRelation(a);
+		}
+	},
 	feed: GS.UIServer.MobileIframableMethod
 });
 GS.provide('', {
@@ -2572,6 +2731,17 @@ GS.provide('', {
 GS.UIServer.Methods['auth.login'] = GS.UIServer.Methods['permissions.request'];
 GS.provide('XGSML', {
 	_renderTimeout: 30000,
+	getElements: function (b, f, d) {
+		var a = GS.Array,
+			e = GS.XGSML._getDomElements(b, f, d),
+			c = GS.Dom.getByClass(f + '-' + d, b);
+		e = a.toArray(e);
+		c = a.toArray(c);
+		c = a.filter(c, function (g) {
+			return !g.hasChildNodes() || (g.childNodes.length === 1 && g.childNodes[0].nodeType === 3);
+		});
+		return a.merge(e, c);
+	},
 	parse: function (d, b) {
 		d = d || document.body;
 		var c = 1,
@@ -2585,18 +2755,18 @@ GS.provide('XGSML', {
 		var a = {};
 		if (GS.XGSML._widgetPipeIsEnabled()) GS.Array.forEach(GS.XGSML._tagInfos, function (f) {
 			if (f.supportsWidgetPipe) {
-				var h = f.xmlns ? f.xmlns : 'gs';
-				var g = GS.XGSML._getDomElements(d, h, f.localName);
+				var h = f.xmlns ? f.xmlns : GSConstants._fb;
+				var g = GS.XGSML.getElements(d, h, f.localName);
 				a[f.localName] = g;
 				GS.XGSML._widgetPipeEnabledTagCount += g.length;
 			}
 		});
 		GS.Array.forEach(GS.XGSML._tagInfos, function (g) {
-			if (!g.xmlns) g.xmlns = 'gs';
+			if (!g.xmlns) g.xmlns = GSConstants._fb;
 			var h;
 			if (a[g.localName] !== undefined) {
 				h = a[g.localName];
-			} else h = GS.XGSML._getDomElements(d, g.xmlns, g.localName);
+			} else h = GS.XGSML.getElements(d, g.xmlns, g.localName);
 			for (var f = 0; f < h.length; f++) {
 				c++;
 				GS.XGSML._processElement(h[f], g, e);
@@ -2604,9 +2774,9 @@ GS.provide('XGSML', {
 		});
 		GS.Event.fire('xgsml.parse');
 		window.setTimeout(function () {
-			if (b > 0) GS.log(b + ' XGSML tags failed to render in ' + GS.XGSML._renderTimeout + 'ms.');
+			if (c > 0) GS.log(c + ' XGSML tags failed to render in ' + GS.XGSML._renderTimeout + 'ms.');
 		}, GS.XGSML._renderTimeout);
-		d();
+		e();
 	},
 	registerTag: function (a) {
 		GS.XGSML._tagInfos.push(a);
@@ -2616,6 +2786,13 @@ GS.provide('XGSML', {
 		var a = GS.XGSML._widgetPipeEnabledTagCount > 1;
 		return a;
 	},
+	getBoolAttr: function (b, a) {
+		a = GS.XGSML.getAttr(b, a);
+		return (a && GS.Array.indexOf(['true', '1', 'yes', 'on'], a.toLowerCase()) > -1);
+	},
+	getAttr: function (b, a) {
+		return (b.getAttribute(a) || b.getAttribute(a.replace(/_/g, '-')) || b.getAttribute(a.replace(/-/g, '_')) || b.getAttribute(a.replace(/-/g, '')) || b.getAttribute(a.replace(/_/g, '')) || b.getAttribute('data-' + a) || b.getAttribute('data-' + a.replace(/_/g, '-')) || b.getAttribute('data-' + a.replace(/-/g, '_')) || b.getAttribute('data-' + a.replace(/-/g, '')) || b.getAttribute('data-' + a.replace(/_/g, '')) || null);
+	},
 	_processElement: function (dom, tagInfo, cb) {
 		var element = dom._element;
 		if (element) {
@@ -2624,29 +2801,34 @@ GS.provide('XGSML', {
 		} else {
 			var processor = function () {
 				var fn = eval(tagInfo.className);
-				var getBoolAttr = function (attr) {
-					var attr = dom.getAttribute(attr);
-					return (attr && GS.Array.indexOf(['true', '1', 'yes', 'on'], attr.toLowerCase()) > -1);
-				};
 				var isLogin = false;
 				var showFaces = true;
 				var renderInIframe = false;
-				if (tagInfo.className === 'GS.XGSML.LoginButton') {
-					addToProfile = (tagInfo.localName == 'add-to-profile');
-					renderInIframe = getBoolAttr('render-in-iframe');
-					showFaces = addToProfile || getBoolAttr('show-faces') || getBoolAttr('show_faces');
-					isLogin = addToProfile || renderInIframe || showFaces || getBoolAttr('oneclick');
-					if (isLogin) fn = GS.XGSML.Login;
+				var addToTimeline = (tagInfo.className === 'GS.XGSML.AddToTimeline');
+				if ((tagInfo.className === 'GS.XGSML.LoginButton') || addToTimeline) {
+					renderInIframe = GS.XGSML.getBoolAttr(dom, 'render-in-iframe');
+					mode = dom.getAttribute('mode');
+					showFaces = (addToTimeline && mode != 'button') || GS.XGSML.getBoolAttr(dom, 'show-faces');
+					isLogin = addToTimeline || renderInIframe || showFaces ||  GS.XGSML.getBoolAttr(dom, 'oneclick');
+					if (isLogin && !addToTimeline) fn = GS.XGSML.Login;
 				}
 				element = dom._element = new fn(dom);
 				if (isLogin) {
+					showFaces = !! showFaces;
 					var extraParams = {
 						show_faces: showFaces,
-						add_to_profile: addToProfile
+						add_to_profile: addToTimeline,
+						mode: mode
 					};
-					if (addToProfile) extraParams.width = 300;
-					var perms = dom.getAttribute('perms');
-					if (perms) extraParams.perms = perms;
+					var scope = dom.getAttribute('scope');
+					if (scope) {
+						if (GS._oauth) {
+							extraParams.scope = scope;
+						} else extraParams.perms = scope;
+					} else {
+						var perms = dom.getAttribute('perms');
+						if (perms) extraParams.perms = perms;
+					}
 					element.setExtraParams(extraParams);
 				}
 				element.subscribe('render', cb);
@@ -2679,8 +2861,8 @@ GS.provide('XGSML', {
 		localName: 'add-profile-tab',
 		className: 'GS.XGSML.AddProfileTab'
 	}, {
-		localName: 'add-to-profile',
-		className: 'GS.XGSML.LoginButton'
+		localName: 'add-to-timeline',
+		className: 'GS.XGSML.AddToTimeline'
 	}, {
 		localName: 'bookmark',
 		className: 'GS.XGSML.Bookmark'
@@ -2728,11 +2910,11 @@ GS.provide('XGSML', {
 		localName: 'question',
 		className: 'GS.XGSML.Question'
 	}, {
-		localName: 'read',
-		className: 'GS.XGSML.Read'
-	}, {
 		localName: 'recommendations',
 		className: 'GS.XGSML.Recommendations'
+	}, {
+		localName: 'recommendations-bar',
+		className: 'GS.XGSML.RecommendationsBar'
 	}, {
 		localName: 'registration',
 		className: 'GS.XGSML.Registration'
@@ -2743,11 +2925,14 @@ GS.provide('XGSML', {
 		localName: 'servergsml',
 		className: 'GS.XGSML.ServerGsml'
 	}, {
+		localName: 'serverfbml',
+		className: 'GS.XGSML.ServerGsml'
+	}, {
 		localName: 'share-button',
 		className: 'GS.XGSML.ShareButton'
 	}, {
 		localName: 'social-bar',
-		className: 'GS.XGSML.SocialBar'
+		className: 'GS.XGSML.RecommendationsBar'
 	}],
 	_widgetPipeEnabledTagCount: 0,
 	_widgetPipeIsEnabled: function () {
@@ -2757,6 +2942,7 @@ GS.provide('XGSML', {
 (function () {
 	try {
 		if (document.namespaces && !document.namespaces.item.gs) document.namespaces.add('gs');
+		if (document.namespaces && !document.namespaces.item.fb) document.namespaces.add('fb');
 	} catch (a) {}
 }());
 GS.provide('XGSML', {
@@ -3113,14 +3299,12 @@ GS.Class('XGSML.Element', function (a) {
 	this.dom = a;
 }, GS.copy({
 	getAttribute: function (b, a, c) {
-		var d = (this.dom.getAttribute(b) || this.dom.getAttribute(b.replace(/-/g, '_')) || this.dom.getAttribute(b.replace(/-/g, '')));
+		var d = GS.XGSML.getAttr(this.dom, b);
 		return d ? (c ? c(d) : d) : a;
 	},
 	_getBoolAttribute: function (b, a) {
-		return this.getAttribute(b, a, function (c) {
-			c = c.toLowerCase();
-			return c == 'true' || c == '1' || c == 'yes' || c == 'on';
-		});
+		if (GS.XGSML.getAttr(this.dom, b) === null) return a;
+		 return GS.XGSML.getBoolAttr(this.dom, b);
 	},
 	_getPxAttribute: function (b, a) {
 		return this.getAttribute(b, a, function (c) {
@@ -3183,12 +3367,19 @@ GS.subclass('XGSML.IframeWidget', 'XGSML.Element', null, {
 		return this.dom.getElementsByTagName('iframe')[0];
 	},
 	arbiterInform: function (event, b, a) {
-		if (!this.getIframeNode()) {
-			this.subscribe('iframe.onload', GS.bind(this.arbiterInform, this, event, b, a));
-			return;
-		}
+		if (this.loaded) {
+			this._arbiterInform(event, b, a);
+		} else this.subscribe('iframe.onload', GS.bind(this._arbiterInform, this, event, b, a));
+	},
+	_arbiterInform: function (event, b, a) {
 		var c = 'parent.frames["' + this.getIframeNode().name + '"]';
 		GS.XD.inform(event, b, c, window.location.protocol == 'https:', a);
+	},
+	getDefaultWebDomain: function () {
+		return 'www';
+	},
+	getDefaultStaticDomain: function () {
+		return 'cdn';
 	},
 	process: function (a) {
 		if (this._done) {
@@ -3217,6 +3408,10 @@ GS.subclass('XGSML.IframeWidget', 'XGSML.Element', null, {
 			width: b.width,
 			onload: GS.bind(this.fire, this, 'iframe.onload')
 		});
+		this.loaded = false;
+		this.subscribe('iframe.onload', GS.bind(function () {
+			this.loaded = true;
+		}, this));
 	},
 	generateWidgetPipeIframeName: function () {
 		GS.XGSML.IframeWidget.widgetPipeIframeCount++;
@@ -3299,7 +3494,7 @@ GS.subclass('XGSML.IframeWidget', 'XGSML.Element', null, {
 		var a = 'def_www',
 		b = '';
 		if (this._fetchPreCachedLoader) {
-			a = 'cdn';
+			a = this.getDefaultStaticDomain();
 			b = 'static/';
 		}
 		return GS.getDomain(a) + 'plugins/' + b + this.getUrlBits().name + '.php';
@@ -3370,6 +3565,7 @@ GS.subclass('XGSML.Activity', 'XGSML.IframeWidget', null, {
 			action: this.getAttribute('action'),
 			max_age: this.getAttribute('max_age'),
 			font: this.getAttribute('font'),
+			linktarget: this.getAttribute('linktarget', '_blank'),
 			header: this._getBoolAttribute('header'),
 			height: this._getPxAttribute('height', 300),
 			recommendations: this._getBoolAttribute('recommendations'),
@@ -3476,6 +3672,69 @@ GS.subclass('XGSML.AddProfileTab', 'XGSML.ButtonElement', null, {
 		}));
 	}
 });
+GS.subclass('XGSML.Facepile', 'XGSML.IframeWidget', null, {
+    _visibleAfter: 'load',
+    _extraParams: {},
+    setupAndValidate: function () {
+        this._attr = {
+            href: this.getAttribute('href'),
+            channel: this.getChannelUrl(),
+            colorscheme: this.getAttribute('colorscheme', 'light'),
+            max_rows: this.getAttribute('max-rows'),
+            action: this.getAttribute('action', 'like'),
+            tense: this.getAttribute('tense', 'past'),
+            width: this._getPxAttribute('width', 200),
+            ref: this.getAttribute('ref'),
+            size: this.getAttribute('size', 'small'),
+            extended_social_context: this.getAttribute('extended_social_context', false),
+            login_text: this.dom.innerHTML
+        };
+        this.clear();
+        for (var a in this._extraParams) this._attr[a] = this._extraParams[a];
+        return true;
+    },
+    setExtraParams: function (a) {
+        this._extraParams = a;
+    },
+    oneTimeSetup: function () {
+        var a = GS._userStatus;
+        GS.Event.subscribe('auth.statusChange', GS.bind(function (b) {
+            if (a == 'connected' || b.status == 'connected') this.process(true);
+            a = b.status;
+        }, this));
+    },
+    getSize: function () {
+        if (this._attr.size == 'large') return {
+            width: this._attr.width,
+            height: 90
+        };
+        return {
+            width: this._attr.width,
+            height: 70
+        };
+    },
+    getUrlBits: function () {
+        return {
+            name: 'facepile',
+            params: this._attr
+        };
+    }
+});
+GS.subclass('XGSML.AddToTimeline', 'XGSML.Facepile', null, {
+    _visibleAfter: 'load',
+    getSize: function () {
+        return {
+            width: 300,
+            height: 250
+        };
+    },
+    getUrlBits: function () {
+        return {
+            name: 'add_to_timeline',
+            params: this._attr
+        };
+    }
+});
 GS.subclass('XGSML.Bookmark', 'XGSML.ButtonElement', null, {
 	getButtonMarkup: function () {
 		return GS.Intl._tx("Bookmark on GameStamper");
@@ -3550,6 +3809,9 @@ GS.subclass('XGSML.Comments', 'XGSML.IframeWidget', null, {
 			name: 'comments',
 			params: this._attr
 		};
+	},
+	getDefaultWebDomain: function () {
+		return 'https_www';
 	},
 	_handleCommentMsg: function (a) {
 		if (!this.isValid()) return;
@@ -3821,53 +4083,6 @@ GS.provide('XGSML.ConnectBar', {
 		missingProfileUrl: 'pics/q_silhouette.gif'
 	}
 });
-GS.subclass('XGSML.Facepile', 'XGSML.IframeWidget', null, {
-	_visibleAfter: 'load',
-	_extraParams: {},
-	setupAndValidate: function () {
-		this._attr = {
-			href: this.getAttribute('href'),
-			channel: this.getChannelUrl(),
-			colorscheme: this.getAttribute('colorscheme', 'light'),
-			max_rows: this.getAttribute('max-rows'),
-			action: this.getAttribute('action', 'like'),
-			tense: this.getAttribute('tense', 'past'),
-			width: this._getPxAttribute('width', 200),
-			ref: this.getAttribute('ref'),
-			size: this.getAttribute('size', 'small'),
-			login_text: this.dom.innerHTML
-		};
-		this.clear();
-		for (var a in this._extraParams) this._attr[a] = this._extraParams[a];
-		return true;
-	},
-	setExtraParams: function (a) {
-		this._extraParams = a;
-	},
-	oneTimeSetup: function () {
-		var a = GS._userStatus;
-		GS.Event.subscribe('auth.statusChange', GS.bind(function (b) {
-			if (a == 'connected' || b.status == 'connected') this.process(true);
-			a = b.status;
-		}, this));
-	},
-	getSize: function () {
-		if (this._attr.size == 'large') return {
-			width: this._attr.width,
-			height: 90
-		};
-		return {
-			width: this._attr.width,
-			height: 70
-		};
-	},
-	getUrlBits: function () {
-		return {
-			name: 'facepile',
-			params: this._attr
-		};
-	}
-});
 GS.subclass('XGSML.Fan', 'XGSML.IframeWidget', null, {
 	_visibleAfter: 'load',
 	setupAndValidate: function () {
@@ -3964,7 +4179,8 @@ GS.subclass('XGSML.EdgeWidget', 'XGSML.IframeWidget', null, {
 			show_faces: this._shouldShowFaces(),
 			no_resize: this._getBoolAttribute('no_resize'),
 			send: this.getAttribute('send'),
-			url_map: this.getAttribute('url_map')
+			url_map: this.getAttribute('url_map'),
+			extended_social_context: this._getBoolAttribute('extended_social_context', false)
 		};
 		return true;
 	},
@@ -4111,7 +4327,8 @@ GS.subclass('XGSML.EdgeWidget', 'XGSML.IframeWidget', null, {
 			relativeHeightOffset: (b ? this._getHeightOffset(c) : this._getHeightOffset()),
 			relativeWidthOffset: (d ? this._getWidthOffset(c) : this._getWidthOffset()),
 			error: c.error,
-			siderender: c.siderender
+			siderender: c.siderender,
+			extended_social_context: c.extended_social_context
 		};
 	},
 	_getWidthOffset: function (c) {
@@ -4166,6 +4383,7 @@ GS.subclass('XGSML.SendButtonFormWidget', 'XGSML.EdgeCommentWidget', function (a
 	this._attr.colorscheme = a.colorscheme;
 	this._attr.error = a.error;
 	this._attr.siderender = a.siderender;
+	this._attr.extended_social_context = a.extended_social_context;
 }, {
 	_showLoader: true,
 	getUrlBits: function () {
@@ -4190,7 +4408,8 @@ GS.subclass('XGSML.Send', 'XGSML.EdgeWidget', null, {
 			font: this.getAttribute('font'),
 			colorscheme: this.getAttribute('colorscheme', 'light'),
 			href: this.getAttribute('href', window.location.href),
-			ref: this.getAttribute('ref')
+			ref: this.getAttribute('ref'),
+			extended_social_context: this.getAttribute('extended_social_context', false)
 		};
 		return true;
 	},
@@ -4401,7 +4620,7 @@ GS.subclass('XGSML.LoginButton', 'XGSML.ButtonElement', null, {
 		} else switch (this._attr.status) {
 			case 'unknown':
 				GS.ui({
-					method: 'auth.logintoGamestamper'
+					method: 'auth.logintoFacebook'
 				}, GS.bind(function (a) {
 					GS.bind(GS.getLoginStatus(this._saveStatus(this._authCallback, true), true), this);
 				}, this));
@@ -4649,6 +4868,8 @@ GS.subclass('XGSML.Question', 'XGSML.IframeWidget', null, {
 			width: this.getAttribute('width', 400),
 			height: 0
 		};
+		this.subscribe('xd.firstVote', GS.bind(this._onInitialVote, this));
+		this.subscribe('xd.vote', GS.bind(this._onChangedVote, this));
 		return true;
 	},
 	getSize: function () {
@@ -4662,148 +4883,14 @@ GS.subclass('XGSML.Question', 'XGSML.IframeWidget', null, {
 			name: 'question',
 			params: this._attr
 		};
+	},
+	_onInitialVote: function (a) {
+		GS.Event.fire('question.firstVote', this._attr.permalink, a.vote);
+	},
+	_onChangedVote: function (a) {
+		GS.Event.fire('question.vote', this._attr.permalink, a.vote);
 	}
 });
-GS.subclass('XGSML.Read', 'XGSML.IframeWidget', null, {
-	getUrlBits: function () {
-		return {
-			name: 'read',
-			params: this._attr
-		};
-	},
-	setupAndValidate: function () {
-		function b(i, h) {
-			var j = 0;
-			var k = null;
-
-			function l() {
-				h();
-				k = null;
-				j = (new Date()).getTime();
-			}
-			return function () {
-				if (!k) {
-					var m = (new Date()).getTime();
-					if (m - j < i) {
-						k = window.setTimeout(l, i - (m - j));
-					} else l();
-				}
-				return true;
-			};
-		}
-		function f(i) {
-			if (i != 'manual' && i != 'onvisible') {
-				var h = i.match(/^\d+(?:\.\d+)?%$/) ? parseInt(i, 10) : 80;
-				h = Math.min(Math.max(h, 0), 100);
-				i = h / 100;
-			}
-			return i;
-		}
-		this._attr = {
-			channel: this.getChannelUrl(),
-			api_key: GS._apiKey,
-			font: this.getAttribute('font'),
-			colorscheme: this.getAttribute('colorscheme', 'light'),
-			href: this.getAttribute('href', window.location.href),
-			ref: this.getAttribute('ref'),
-			trigger: f(this.getAttribute('trigger', '')),
-			mintime: parseInt(this.getAttribute('mintime'), 10) || 30
-		};
-		this._showLoader = false;
-		this.subscribe('iframe.onload', GS.bind(function () {
-			var h = this.dom.firstElementChild;
-			h.style.position = "fixed";
-			h.style.bottom = "0";
-			h.style.right = "10px";
-		}, this));
-		var a = GS.bind(function () {
-			GS.Event.unlisten(window, 'scroll', a);
-			GS.Event.unlisten(document.documentElement, 'click', a);
-			GS.Event.unlisten(document.documentElement, 'mousemove', a);
-			window.setTimeout(GS.bind(this.arbiterInform, this, 'platform/plugins/read/action'), this._attr.mintime * 1000);
-			return true;
-		}, this);
-		GS.Event.listen(window, 'scroll', a);
-		GS.Event.listen(document.documentElement, 'click', a);
-		GS.Event.listen(document.documentElement, 'mousemove', a);
-		if (this._attr.trigger == "manual") {
-			var c = GS.bind(function (h) {
-				if (h == this._attr.href) {
-					GS.Event.unsubscribe('XGSML.read.read', c);
-					this.arbiterInform('platform/plugins/read/trigger');
-				}
-				return true;
-			}, this);
-			GS.Event.subscribe('XGSML.read.read', c);
-		} else {
-			var e = b(500, GS.bind(function () {
-				if (this.calculateVisibility()) {
-					GS.Event.unlisten(window, 'scroll', e);
-					GS.Event.unlisten(window, 'resize', e);
-					this.arbiterInform('platform/plugins/read/trigger');
-				}
-				return true;
-			}, this));
-			GS.Event.listen(window, 'scroll', e);
-			GS.Event.listen(window, 'resize', e);
-			e();
-		}
-		this.visible = false;
-		var g = b(500, GS.bind(function () {
-			if (!this.visible && this.calculateVisibility()) {
-				this.visible = true;
-				this.arbiterInform('platform/plugins/read/visible');
-			} else if (this.visible && !this.calculateVisibility()) {
-				this.visible = false;
-				this.arbiterInform('platform/plugins/read/invisible');
-			}
-			return true;
-		}, this));
-		GS.Event.listen(window, 'scroll', g);
-		GS.Event.listen(window, 'resize', g);
-		g();
-		this.focused = true;
-		var d = GS.bind(function () {
-			this.focused = !this.focused;
-			return true;
-		}, this);
-		GS.Event.listen(window, 'blur', d);
-		GS.Event.listen(window, 'focus', d);
-		return true;
-	},
-	getSize: function () {
-		return {
-			height: 25,
-			width: 145
-		};
-	},
-	calculateVisibility: function () {
-		var b = document.documentElement.clientHeight;
-		if (!this.focused) return this.visible;
-		switch (this._attr.trigger) {
-			case "manual":
-				return false;
-			case "onvisible":
-				var a = this.dom.getBoundingClientRect().top;
-				return a <= b;
-			default:
-				var d = window.scrollY + b;
-				var c = document.documentElement.scrollHeight;
-				return d / c >= this._attr.trigger;
-		}
-	},
-	_handleResizeMsg: function (a) {
-		if (!this.isValid()) return;
-		var b = {};
-		if (a.width) b.width = a.width + 'px';
-		if (a.height) b.height = a.height + 'px';
-		GS.Anim.ate(this.getIframeNode(), b, 200);
-		this._makeVisible();
-	}
-});
-GS.XGSML.Read.markRead = function (a) {
-	GS.Event.fire('XGSML.read.read', a || window.location.href);
-};
 GS.subclass('XGSML.Recommendations', 'XGSML.IframeWidget', null, {
 	_visibleAfter: 'load',
 	_refreshOnAuthChange: true,
@@ -4814,6 +4901,7 @@ GS.subclass('XGSML.Recommendations', 'XGSML.IframeWidget', null, {
 			filter: this.getAttribute('filter'),
 			font: this.getAttribute('font'),
 			action: this.getAttribute('action'),
+			linktarget: this.getAttribute('linktarget', '_blank'),
 			max_age: this.getAttribute('max_age'),
 			header: this._getBoolAttribute('header'),
 			height: this._getPxAttribute('height', 300),
@@ -4835,6 +4923,176 @@ GS.subclass('XGSML.Recommendations', 'XGSML.IframeWidget', null, {
 		};
 	}
 });
+GS.subclass('XGSML.RecommendationsBar', 'XGSML.IframeWidget', null, {
+	getUrlBits: function () {
+		return {
+			name: 'recommendations_bar',
+			params: this._attr
+		};
+	},
+	setupAndValidate: function () {
+		function b(j, i) {
+			var k = 0;
+			var l = null;
+
+			function m() {
+				i();
+				l = null;
+				k = (new Date()).getTime();
+			}
+			return function () {
+				if (!l) {
+					var n = (new Date()).getTime();
+					if (n - k < j) {
+						l = window.setTimeout(m, j - (n - k));
+					} else m();
+				}
+				return true;
+			};
+		}
+		function g(j) {
+			if (j.match(/^\d+(?:\.\d+)?%$/)) {
+				var i = Math.min(Math.max(parseInt(j, 10), 0), 100);
+				j = i / 100;
+			} else if (j != 'manual' && j != 'onvisible') j = 'onvisible';
+			return j;
+		}
+		function f(i) {
+			return Math.max(parseInt(i, 10) || 30, 10);
+		}
+		this._attr = {
+			channel: this.getChannelUrl(),
+			api_key: GS._apiKey,
+			font: this.getAttribute('font'),
+			colorscheme: this.getAttribute('colorscheme'),
+			side: this.getAttribute('side'),
+			href: this.getAttribute('href', window.location.href),
+			site: this.getAttribute('site'),
+			action: this.getAttribute('action'),
+			ref: this.getAttribute('ref'),
+			trigger: g(this.getAttribute('trigger', '')),
+			read_time: f(this.getAttribute('read_time'))
+		};
+		GS._inPlugin = true;
+		this._showLoader = false;
+		this.subscribe('iframe.onload', GS.bind(function () {
+			var i = this._attr.side || (GS._localeIsRtl ? 'left' : 'right');
+			var j = this.dom.children[0];
+			j.className = 'fbpluginrecommendationsbar fbpluginrecommendationsbar' + i;
+		}, this));
+		var a = GS.bind(function () {
+			GS.Event.unlisten(window, 'scroll', a);
+			GS.Event.unlisten(document.documentElement, 'click', a);
+			GS.Event.unlisten(document.documentElement, 'mousemove', a);
+			window.setTimeout(GS.bind(this.arbiterInform, this, 'platform/plugins/social_bar/action', null, GS.XD.BEHAVIOR_STATE), this._attr.read_time * 1000);
+			return true;
+		}, this);
+		GS.Event.listen(window, 'scroll', a);
+		GS.Event.listen(document.documentElement, 'click', a);
+		GS.Event.listen(document.documentElement, 'mousemove', a);
+		if (this._attr.trigger == "manual") {
+			var c = GS.bind(function (i) {
+				if (i == this._attr.href) {
+					GS.Event.unsubscribe('xgsml.recommendationsbar.read', c);
+					this.arbiterInform('platform/plugins/social_bar/trigger', null, GS.XD.BEHAVIOR_STATE);
+				}
+				return true;
+			}, this);
+			GS.Event.subscribe('xgsml.recommendationsbar.read', c);
+		} else {
+			var e = b(500, GS.bind(function () {
+				if (this.calculateVisibility()) {
+					GS.Event.unlisten(window, 'scroll', e);
+					GS.Event.unlisten(window, 'resize', e);
+					this.arbiterInform('platform/plugins/social_bar/trigger', null, GS.XD.BEHAVIOR_STATE);
+				}
+				return true;
+			}, this));
+			GS.Event.listen(window, 'scroll', e);
+			GS.Event.listen(window, 'resize', e);
+			e();
+		}
+		this.visible = false;
+		var h = b(500, GS.bind(function () {
+			if (!this.visible && this.calculateVisibility()) {
+				this.visible = true;
+				this.arbiterInform('platform/plugins/social_bar/visible');
+			} else if (this.visible && !this.calculateVisibility()) {
+				this.visible = false;
+				this.arbiterInform('platform/plugins/social_bar/invisible');
+			}
+			return true;
+		}, this));
+		GS.Event.listen(window, 'scroll', h);
+		GS.Event.listen(window, 'resize', h);
+		h();
+		this.focused = true;
+		var d = GS.bind(function () {
+			this.focused = !this.focused;
+			return true;
+		}, this);
+		GS.Event.listen(window, 'blur', d);
+		GS.Event.listen(window, 'focus', d);
+		this.resize_running = false;
+		this.animate = false;
+		this.subscribe('xd.signal_animation', GS.bind(function () {
+			this.animate = true;
+		}, this));
+		return true;
+	},
+	getSize: function () {
+		return {
+			height: 25,
+			width: (this._attr.action == 'recommend' ? 140 : 96)
+		};
+	},
+	calculateVisibility: function () {
+		var b = document.documentElement.clientHeight;
+		if (!this.focused && window.console && window.console.firebug) return this.visible;
+		switch (this._attr.trigger) {
+			case "manual":
+				return false;
+			case "onvisible":
+				var a = this.dom.getBoundingClientRect().top;
+				return a <= b;
+			default:
+				var d = window.scrollY + b;
+				var c = document.documentElement.scrollHeight;
+				return d / c >= this._attr.trigger;
+		}
+	},
+	_handleResizeMsg: function (a) {
+		if (!this.isValid()) return;
+		if (a.width) this.getIframeNode().style.width = a.width + 'px';
+		if (a.height) {
+			this._setNextResize(a.height);
+			this._checkNextResize();
+		}
+		this._makeVisible();
+	},
+	_setNextResize: function (a) {
+		this.next_resize = a;
+	},
+	_checkNextResize: function () {
+		if (!this.next_resize || this.resize_running) return;
+		var b = this.getIframeNode();
+		var a = this.next_resize;
+		this.next_resize = null;
+		if (this.animate) {
+			this.animate = false;
+			this.resize_running = true;
+			GS.Anim.ate(b, {
+				height: a + 'px'
+			}, 300, GS.bind(function () {
+				this.resize_running = false;
+				this._checkNextResize();
+			}, this));
+		} else b.style.height = a + 'px';
+	}
+});
+GS.XGSML.RecommendationsBar.markRead = function (a) {
+	GS.Event.fire('xgsml.recommendationsbar.read', a || window.location.href);
+};
 GS.subclass('XGSML.Registration', 'XGSML.IframeWidget', null, {
 	_visibleAfter: 'immediate',
 	_baseHeight: 167,
@@ -4900,6 +5158,9 @@ GS.subclass('XGSML.Registration', 'XGSML.IframeWidget', null, {
 			params: this._attr
 		};
 	},
+	getDefaultWebDomain: function () {
+		return 'https_www';
+	},
 	_onAuthLogin: function () {
 		if (!GS.getSession()) GS.getLoginStatus();
 		GS.Helper.fireEvent('auth.login', this);
@@ -4912,17 +5173,18 @@ GS.subclass('XGSML.Registration', 'XGSML.IframeWidget', null, {
 GS.subclass('XGSML.ServerGsml', 'XGSML.IframeWidget', null, {
 	_visibleAfter: 'resize',
 	setupAndValidate: function () {
+		this.ml = GSConstants._fb+'ml';
 		this._attr = {
 			channel_url: this.getChannelUrl(),
-			gsml: this.getAttribute('gsml'),
 			width: this._getPxAttribute('width')
 		};
-		if (!this._attr.gsml) {
+		this._attr[this.ml] = this.getAttribute(this.ml);
+		if (!this._attr[this.ml]) {
 			var a = this.dom.getElementsByTagName('script')[0];
-			if (a && a.type === 'text/gsml') this._attr.gsml = a.innerHTML;
+			if (a && a.type === 'text/'+this.ml) this._attr[this.ml] = a.innerHTML;
 		}
-		if (!this._attr.gsml) {
-			GS.log('<gs:servergsml> requires the "gsml" attribute.');
+		if (!this._attr[this.ml]) {
+			GS.log('<gs:server'+this.ml+'> requires the "'+this.ml+'" attribute.');
 			return false;
 		}
 		return true;
@@ -4935,7 +5197,7 @@ GS.subclass('XGSML.ServerGsml', 'XGSML.IframeWidget', null, {
 	},
 	getUrlBits: function () {
 		return {
-			name: 'servergsml',
+			name: 'server'+this.ml,
 			params: this._attr
 		};
 	}
@@ -5011,302 +5273,6 @@ GS.subclass('XGSML.ShareButton', 'XGSML.Element', null, {
 			}
 		} else this._count.wait(GS.bind(this._renderButton, this, false));
 		return '<span class="gs_share_count_inner">' + b + '</span>';
-	}
-});
-GS.subclass('XGSML.SocialBar', 'XGSML.EdgeWidget', function (a) {
-	if (GS.XGSML.SocialBar.oInstance) return GS.XGSML.SocialBar.oInstance;
-	this.dom = a;
-	GS.XGSML.SocialBar.oInstance = this;
-	return this;
-}, {
-	_fetchPreCachedLoader: false,
-	_showLoader: false,
-	_initialWidth: 860,
-	_initialHeight: 34,
-	_barIframe: null,
-	_currentZ: 0,
-	_refreshOnAuthChange: true,
-	_visibleAfter: 'load',
-	_getPageWidth: function () {
-		var a = this._barIframe;
-		var b = parseInt(GS.Dom.getStyle(a.parentNode, 'width'), 10);
-		if (isNaN(b)) b = parseInt(a.parentNode.offsetWidth, 10);
-		return b;
-	},
-	_minimizeToolbar: function (c) {
-		var a = this._barIframe;
-		c.resetWidth = false;
-		var d = 300;
-		if (c.width == '100%') {
-			c.resetWidth = true;
-			c.width = this._getPageWidth();
-		}
-		if (a.offsetWidth != c.width) {
-			GS.Anim.ate(a, {
-				width: c.width + 'px'
-			}, d, function (e) {
-				if (c.resetWidth) GS.Dom.setStyle(e, 'width', '100%');
-			});
-			var b = this.dom.getElementsByTagName('iframe');
-			GS.Array.forEach(b, function (e) {
-				if (e.parentNode.id == 'gs_social_bar_container') return;
-				if (!e._isHidden) {
-					e._origHeight = parseInt(GS.Dom.getStyle(e, 'height'), 10);
-					e._origWidth = parseInt(GS.Dom.getStyle(e, 'width'), 10);
-					e._origRight = parseInt(GS.Dom.getStyle(e, 'right'), 10);
-					e._origLeft = parseInt(GS.Dom.getStyle(e, 'left'), 10);
-					e._isHidden = true;
-					GS.Anim.ate(e, {
-						height: '0px',
-						width: '0px',
-						right: c.width + 'px',
-						left: (a.offsetWidth - c.width) + 'px',
-						opacity: 0
-					}, d);
-				} else {
-					GS.Anim.ate(e, {
-						height: e._isClosed ? '0px' : e._origHeight + 'px',
-						width: e._origWidth + 'px',
-						right: e._origRight + 'px',
-						left: e._origLeft + 'px',
-						opacity: 100
-					}, d);
-					e._isHidden = false;
-				}
-			});
-		}
-	},
-	_spawnChild: function (f) {
-		var d = this._barIframe,
-		i, g, h = document.createElement('i');
-		if (!f.position || f.position != 'left') {
-			g = parseInt(GS.Dom.getStyle(d.parentNode, 'paddingRight'), 10) + (f.position ? 0 : parseInt(f.minimizeWidth, 10));
-			i = 'right';
-		} else {
-			g = parseInt(GS.Dom.getStyle(d.parentNode, 'paddingLeft'), 10) + parseInt(f.offsetLeft ? f.offsetLeft : 0, 10);
-			i = 'left';
-		}
-		if (f.name in window.frames) {
-			var e = this.dom.getElementsByTagName ? this.dom.getElementsByTagName('iframe') : document.getElementsByTagName('iframe');
-			for (var c = 0; c < e.length; c++) {
-				var b = e[c];
-				if (b.name == f.name) {
-					b.style.width = f.width;
-					b._isClosed = false;
-					GS.Anim.ate(b, {
-						height: f.height,
-						opacity: 100
-					});
-				}
-			}
-		} else {
-			d.parentNode.appendChild(h);
-			var a = this;
-			GS.Content.insertIframe({
-				root: h,
-				name: f.name,
-				url: f.src,
-				className: 'gs_social_bar_iframe',
-				width: parseInt(f.width, 10),
-				height: 0,
-				onload: function (j) {
-					j.style.position = 'absolute';
-					j.style[a._attr.position] = a._initialHeight + 'px';
-					j.style.height = '0px';
-					j.style[i] = g + 'px';
-					j.style.zIndex = ++a._currentZ;
-					GS.Dom.setStyle(j, 'opacity', 0);
-					GS.Anim.ate(j, {
-						height: f.height,
-						opacity: 100
-					});
-					j._isClosed = false;
-				}
-			});
-		}
-		GS.Array.forEach(document.getElementsByTagName('object'), function (j) {
-			GS.Dom.setStyle(j, 'visibility', 'hidden');
-		});
-	},
-	_closeChild: function (c) {
-		var b = this.dom.getElementsByTagName ? this.dom.getElementsByTagName('iframe') : document.getElementsByTagName('iframe');
-		var d = function (e) {
-			if (c.remove) e.parentNode.parentNode.removeChild(e.parentNode);
-		};
-		for (var a = 0; a < b.length; a++) if (b[a].name == c.name) {
-			b[a]._isClosed = true;
-			GS.Anim.ate(b[a], {
-				height: '0px',
-				opacity: 0
-			}, 300, d);
-		}
-		GS.Array.forEach(document.getElementsByTagName('object'), function (e) {
-			GS.Dom.setStyle(e, 'visibility', '');
-		});
-	},
-	_expand: function () {
-		GS.Dom.setStyle(this._barIframe, 'height', '100%');
-		GS.Dom.setStyle(this._barIframe.parentNode, 'height', '100%');
-	},
-	_shrink: function () {
-		GS.Dom.setStyle(this._barIframe, 'height', '34px');
-		GS.Dom.setStyle(this._barIframe.parentNode, 'height', '34px');
-	},
-	_iframeOnload: function (c) {
-		this._barIframe = c;
-		var b = c.parentNode;
-		var d = true;
-		b.id = 'gs_social_bar_container';
-		if (d) {
-			GS.Dom.setStyle(c, 'width', '100%');
-		} else GS.Dom.setStyle(c, 'width', '35px');
-		this._currentZ += parseInt(GS.Dom.getStyle(c, 'zIndex'), 10);
-		if (isNaN(this._currentZ)) this._currentZ = 99999;
-		GS.Dom.setStyle(c, 'opacity', 100);
-		c.className = 'gs_social_bar_iframe';
-		if (!window.XMLHttpRequest) {
-			GS.Dom.setStyle(b, 'position', 'absolute');
-			b.className = 'gs_social_bar_iframe_' + this._attr.position + '_ie6';
-			b.parentNode.removeChild(b);
-			document.body.appendChild(b);
-		} else GS.Dom.setStyle(b, this._attr.position, '0px');
-		GS.Dom.setStyle(this.dom, 'display', 'inline');
-
-		function a() {
-			this.widgets = {};
-		}
-		GS.copy(a.prototype, {
-			addWidget: function (e, g, f) {
-				this.widgets[e] = GS.copy({
-					widget: g
-				}, f);
-				return this;
-			},
-			send: function (e) {
-				var f = GS.guid();
-				var g = GS.copy({
-					widget_pipe: GS.JSON.stringify(this.widgets)
-				}, e);
-				GS.Content.insertIframe({
-					url: 'about:blank',
-					root: document.getElementById('gs-root') || document.body,
-					name: f,
-					className: 'gs_hidden',
-					onload: function () {
-						GS.Content.submitToTarget({
-							url: GS._domain.www + 'widget_pipe.php',
-							target: f,
-							params: g
-						}, true);
-					}
-				});
-			},
-			addSocialBarWidgets: function (e, g) {
-				for (var f = 0; f < g.length; f++) this.addWidget(e + ':' + g[f], g[f]);
-				return this;
-			}
-		});
-		new a().addSocialBarWidgets(c.name, ['social_bar_controls', 'social_bar_profile', 'social_bar_like', 'social_bar_activity', 'social_bar_jewels']).send({
-			href: window.location,
-			site: this.getAttribute('site', location.hostname),
-			channel: this.getChannelUrl(),
-			api_key: GS._apiKey,
-			locale: GS._locale,
-			session_key: GS._session && GS._session.session_key
-		});
-	},
-	oneTimeSetup: function () {
-		GS.Dom.setStyle(this.dom, 'display', 'none');
-		this.subscribe('xd.minimizeToolbar', GS.bind(this._minimizeToolbar, this));
-		this.subscribe('xd.spawnChild', GS.bind(this._spawnChild, this));
-		this.subscribe('xd.closeChild', GS.bind(this._closeChild, this));
-		this.subscribe('xd.logoutSocialBar', GS.logout);
-		this.subscribe('xd.loginSocialBar', GS.login);
-		this.subscribe('iframe.onload', GS.bind(this._iframeOnload, this));
-		this.subscribe('xd.presentEdgeCommentDialog', GS.bind(this._onEdgeCreate, this));
-		this.subscribe('xd.presentEdgeCommentDialog', GS.bind(this._handleEdgeCommentDialogPresentation, this));
-		this.subscribe('xd.dismissEdgeCommentDialog', GS.bind(this._handleEdgeCommentDialogDismissal, this));
-		this.subscribe('xd.hideEdgeCommentDialog', GS.bind(this._handleEdgeCommentDialogHide, this));
-		this.subscribe('xd.showEdgeCommentDialog', GS.bind(this._handleEdgeCommentDialogShow, this));
-		this.subscribe('xd.expandBar', GS.bind(this._expand, this));
-		this.subscribe('xd.shrinkBar', GS.bind(this._shrink, this));
-	},
-	_handleEdgeCommentDialogPresentation: function (c) {
-		if (!this.isValid()) return;
-		var a = document.createElement('i');
-		var d = {
-			commentNode: a,
-			externalUrl: c.externalURL,
-			width: 330,
-			height: 200,
-			masterFrameName: c.masterFrameName,
-			relativeHeightOffset: '0px'
-		};
-		this._commentSlave = new GS.XGSML.EdgeCommentWidget(d);
-		var b = parseInt(GS.Dom.getStyle(this._barIframe.parentNode, 'paddingLeft'), 10) + parseInt(c.left, 10);
-		GS.Dom.setStyle(a, 'position', 'absolute');
-		GS.Dom.removeCss(a, 'fb_iframe_widget');
-		GS.Dom.setStyle(a, 'top', '');
-		GS.Dom.setStyle(a, this._attr.position, this._initialHeight - 1 + 'px');
-		GS.Dom.setStyle(a, 'left', b + 'px');
-		GS.Dom.setStyle(a, 'zIndex', ++this._currentZ);
-		GS.Dom.setStyle(a, 'opacity', 0);
-		this.dom.parentNode.appendChild(a);
-		this._commentSlave.process();
-		this._commentWidgetNode = a;
-	},
-	_handleEdgeCommentDialogHide: function () {
-		if (this._commentWidgetNode) {
-			GS.Dom.removeCss(this._commentWidgetNode, 'hidden_elem');
-			GS.Anim.ate(this._commentWidgetNode, {
-				opacity: 0
-			}, 300, GS.bind(function () {
-				this._commentWidgetNode.style.display = "none";
-			}, this));
-		}
-	},
-	_handleEdgeCommentDialogShow: function () {
-		if (this._commentWidgetNode) {
-			this._commentWidgetNode.style.display = "block";
-			GS.Anim.ate(this._commentWidgetNode, {
-				opacity: 100
-			}, 500);
-		}
-	},
-	_handleEdgeCommentDialogDismissal: function (a) {
-		if (this._commentWidgetNode) {
-			this._commentWidgetNode.parentNode.removeChild(this._commentWidgetNode);
-			delete this._commentWidgetNode;
-		}
-	},
-	getUrlBits: function () {
-		return {
-			name: 'social_bar',
-			params: this._attr
-		};
-	},
-	getSize: function () {
-		return {
-			width: this._initialWidth,
-			height: this._initialHeight
-		};
-	},
-	getIframeName: function () {
-		return 'gs_social_bar_iframe';
-	},
-	setupAndValidate: function () {
-		this._attr = {
-			like: this._getBoolAttribute('like'),
-			precache: this._getBoolAttribute('precache'),
-			send: this._getBoolAttribute('send'),
-			activity: this._getBoolAttribute('activity'),
-			chat: this._getBoolAttribute('chat'),
-			position: this._getAttributeFromList('position', 'bottom', ['top', 'bottom']),
-			href: window.location,
-			site: this.getAttribute('site', location.hostname),
-			channel: this.getChannelUrl()
-		};
-		return true;
 	}
 });
 void(0);
